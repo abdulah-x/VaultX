@@ -80,10 +80,14 @@ class Settings(BaseSettings):
 
 settings = Settings()
 
-# Fail fast: never run outside DEBUG on the shipped insecure secret. This turns a
-# silent security hole (JWTs signed with a public constant) into a hard startup error.
-if not settings.debug and settings.secret_key == DEFAULT_INSECURE_SECRET:
+# Fail fast on the shipped insecure secret, regardless of DEBUG. DEBUG defaults to
+# true in docker-compose.yml/.env.example, so gating this on DEBUG=false would make
+# it dead code in the exact configuration this repo ships — JWTs would be silently
+# signed with a public, repo-visible constant. An explicit opt-in is required to
+# run with the default secret at all (e.g. quick local experimentation).
+if settings.secret_key == DEFAULT_INSECURE_SECRET and os.getenv("ALLOW_INSECURE_SECRET", "").lower() != "true":
     raise RuntimeError(
-        "SECRET_KEY is still set to the insecure default. "
-        "Set a strong SECRET_KEY environment variable before running with DEBUG=false."
+        "SECRET_KEY is still set to the insecure default. Set a strong SECRET_KEY "
+        "environment variable, or set ALLOW_INSECURE_SECRET=true to explicitly opt "
+        "into running with it (not recommended outside throwaway local testing)."
     )
