@@ -55,6 +55,7 @@ export default function PortfolioPage() {
   // Placeholder data shown until the live portfolio endpoint is wired up.
   // Field names mirror the backend Holding model (qty, avgBuyPrice, lastPrice,
   // realizedPnL, unrealizedPnL) so the swap to real data is a drop-in.
+  // TODO(Phase 4): replace with a usePortfolioSummary React Query hook.
   const mockPortfolioData = {
     holdings: [
       {
