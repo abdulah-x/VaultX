@@ -12,8 +12,9 @@ from datetime import datetime, timedelta
 import websockets
 
 from core.dependencies import get_db, get_current_active_user
-from database.models import User, Holding
-from services.binance.client import BinanceClientManager
+from core.auth import auth_manager
+from database.models import User, Holding, Asset
+from services.binance.client import BinanceClientManager, run_sync
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
@@ -67,23 +68,27 @@ class RealTimePriceManager:
     
     async def get_portfolio_symbols(self, user_id: int, db: Session) -> List[str]:
         """Get symbols from user's portfolio for automatic subscription"""
-        portfolios = db.query(Holding).filter(
-            Holding.user_id == user_id,
-            Holding.quantity > 0
-        ).all()
-        
+        # Join Asset to read the ticker symbol; filter on the real quantity column.
+        holdings = (
+            db.query(Asset.symbol)
+            .join(Holding, Holding.asset_id == Asset.id)
+            .filter(
+                Holding.user_id == user_id,
+                Holding.total_quantity > 0,
+            )
+            .all()
+        )
+
         symbols = []
-        for portfolio in portfolios:
-            asset = portfolio.symbol
+        for (asset_symbol,) in holdings:
             # Generate potential trading pairs
-            potential_symbols = [
-                f"{asset}USDT",
-                f"{asset}BUSD",
-                f"{asset}BTC", 
-                f"{asset}ETH"
-            ]
-            symbols.extend(potential_symbols)
-        
+            symbols.extend([
+                f"{asset_symbol}USDT",
+                f"{asset_symbol}BUSD",
+                f"{asset_symbol}BTC",
+                f"{asset_symbol}ETH",
+            ])
+
         return list(set(symbols))  # Remove duplicates
     
     async def _start_binance_stream(self):
@@ -133,7 +138,7 @@ class RealTimePriceManager:
         
         while self.is_streaming and self.active_connections:
             try:
-                client = client_manager.get_client()
+                client = await run_sync(client_manager.get_client)
                 if not client:
                     await asyncio.sleep(5)
                     continue
@@ -150,7 +155,7 @@ class RealTimePriceManager:
                 # Get current prices
                 for symbol in list(all_symbols)[:10]:  # Limit to prevent rate limiting
                     try:
-                        ticker = client.get_symbol_ticker(symbol=symbol)
+                        ticker = await run_sync(client.get_symbol_ticker, symbol=symbol)
                         
                         price_data = {
                             "symbol": symbol,
@@ -212,12 +217,12 @@ class RealTimePriceManager:
             if symbol in self.price_cache:
                 result[symbol] = self.price_cache[symbol]
             else:
-                # Try to get from Binance directly
+                # Try to get from Binance directly (blocking calls off-thread)
                 try:
                     client_manager = BinanceClientManager()
-                    client = client_manager.get_client()
+                    client = await run_sync(client_manager.get_client)
                     if client:
-                        ticker = client.get_symbol_ticker(symbol=symbol)
+                        ticker = await run_sync(client.get_symbol_ticker, symbol=symbol)
                         result[symbol] = {
                             "symbol": symbol,
                             "price": float(ticker['price']),
@@ -243,12 +248,20 @@ async def websocket_price_stream(
     """
     connection_id = None
     user_id = None
-    
+
+    # Authenticate the connection from the JWT before accepting it. An invalid,
+    # expired, wrong-type, or missing-subject token is rejected with policy-violation.
     try:
-        # Validate JWT token (simplified for demo)
-        # In production, properly validate the JWT token
-        user_id = 1  # Would extract from token
-        
+        payload = auth_manager.verify_token(token)
+        if payload.get("type") and payload.get("type") != "access":
+            raise ValueError("non-access token")
+        user_id = int(payload["sub"])
+    except Exception as e:
+        logger.warning(f"⚠️ Rejected price-stream WebSocket: {e}")
+        await websocket.close(code=1008)  # policy violation
+        return
+
+    try:
         connection_id = await price_manager.connect_user(websocket, user_id, token)
         
         # Get user's portfolio symbols and subscribe

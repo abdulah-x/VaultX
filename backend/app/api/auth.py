@@ -231,17 +231,26 @@ async def login_user(
 @router.get("/auth/logout")
 async def logout_user_get(
     current_user: User = Depends(get_current_active_user),
+    current_token: str = Depends(get_current_token),
     db: Session = Depends(get_db)
 ):
     """
-    Logout current user (GET method for compatibility)
+    Logout current user (GET method for compatibility).
+    Blacklists the presented token for its remaining lifetime, same as POST.
     """
     try:
-        # For now, we'll just return success since we don't track individual sessions by token
-        # In a production system, you'd want to maintain a blacklist of tokens
-        
-        return {"message": "Successfully logged out", "method": "GET"}
-        
+        payload = auth_manager.verify_token(current_token)
+        remaining_seconds = max(0, int(payload.get("exp", 0) - datetime.utcnow().timestamp()))
+        token_invalidated = True
+        if remaining_seconds > 0:
+            token_invalidated = bool(redis_client.blacklist_token(current_token, remaining_seconds))
+
+        return {
+            "message": "Successfully logged out",
+            "method": "GET",
+            "token_invalidated": token_invalidated,
+        }
+
     except Exception as e:
         raise DatabaseError(f"Logout failed: {str(e)}")
 

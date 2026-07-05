@@ -11,7 +11,7 @@ from typing import Dict, List, Optional
 import os
 import json
 
-from app.database.connection import DB_DIR, BACKUP_DIR, IS_SQLITE, IS_POSTGRES, DATABASE_URL
+from database.connection import DB_DIR, BACKUP_DIR, IS_SQLITE, IS_POSTGRES, DATABASE_URL
 
 
 class BackupService:

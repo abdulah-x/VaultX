@@ -11,10 +11,10 @@ from google.oauth2 import id_token
 from google.auth.transport import requests as google_requests
 
 
-from app.core.dependencies import get_db
-from app.database.models import User
-from app.core.auth import auth_manager
-from app.core.config import settings
+from core.dependencies import get_db
+from database.models import User
+from core.auth import auth_manager
+from core.config import settings
 from sqlalchemy.orm import Session
 
 router = APIRouter(prefix="/api/auth", tags=["Google OAuth"])

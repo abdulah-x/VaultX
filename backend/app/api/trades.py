@@ -240,102 +240,26 @@ async def get_trade_statistics(
     except Exception as e:
         raise DatabaseError(f"Error calculating trade statistics: {str(e)}")
 
-@router.get("/trades/{symbol}", response_model=Dict[str, Any])
-async def get_trades_by_symbol(
-    symbol: str,
+# NOTE: Route ordering matters. Static paths (/trades/history) and the typed
+# integer id route (/trades/{trade_id:int}) must be declared BEFORE the greedy
+# string route (/trades/{symbol}); otherwise the symbol route swallows them.
+# The real trade-import endpoints live in trade_import.py; the previous fake
+# "implementation pending" placeholders here have been removed because they
+# shadowed those real routes and returned misleading success responses.
+
+@router.get("/trades/history", response_model=Dict[str, Any])
+async def get_trades_history(
     current_user: User = Depends(get_current_active_user),
-    limit: int = Query(100, ge=1, le=1000, description="Maximum number of trades to return"),
+    page: int = Query(1, ge=1, description="Page number"),
+    page_size: int = Query(50, ge=1, le=1000, description="Items per page"),
     db = Depends(get_db)
 ):
     """
-    Get trade history for a specific trading pair
+    Get trade history (alias to main trades endpoint)
     """
-    try:
-        # Enhanced input validation to prevent SQL injection
-        import re
-        
-        # Validate symbol format (only alphanumeric characters and common trading pair separators)
-        if not re.match(r'^[A-Za-z0-9/\-_]{1,20}$', symbol):
-            raise HTTPException(status_code=400, detail="Invalid symbol format")
-        
-        # Additional validation for common SQL injection patterns
-        dangerous_patterns = [
-            "'", '"', ';', '--', '/*', '*/', 'union', 'select', 'drop', 'delete', 'insert', 'update'
-        ]
-        symbol_lower = symbol.lower()
-        for pattern in dangerous_patterns:
-            if pattern in symbol_lower:
-                raise HTTPException(status_code=400, detail="Invalid symbol characters detected")
-        
-        trades = db.query(Trade).filter(
-            Trade.user_id == current_user.id,
-            Trade.symbol == symbol.upper()
-        ).order_by(Trade.executed_at.desc()).limit(limit).all()
-        
-        trades_list = []
-        for trade in trades:
-            trades_list.append({
-                "id": trade.id,
-                "binance_order_id": trade.binance_order_id,
-                "side": trade.side,
-                "quantity": float(trade.quantity),
-                "price": float(trade.price),
-                "quote_quantity": float(trade.quote_quantity),
-                "commission": float(trade.commission) if trade.commission else None,
-                "executed_at": trade.executed_at.isoformat()
-            })
-        
-        return {
-            "success": True,
-            "symbol": symbol.upper(),
-            "user_id": current_user.id,
-            "total_trades": len(trades_list),
-            "trades": trades_list
-        }
-        
-    except HTTPException:
-        # Re-raise HTTP exceptions (like validation errors) without converting them
-        raise
-    except Exception as e:
-        raise DatabaseError(f"Error fetching trades for {symbol}: {str(e)}")
+    return await get_trade_history(current_user, page, page_size, None, None, None, None, db)
 
-# Additional endpoint models
-class CreateTradeRequest(BaseModel):
-    symbol: str
-    side: str  # BUY/SELL
-    quantity: Decimal
-    price: Decimal
-    timestamp: Optional[datetime] = None
-
-@router.post("/trades", response_model=Dict[str, Any])
-async def create_trade(
-    trade_data: CreateTradeRequest,
-    current_user: User = Depends(get_current_active_user),
-    db = Depends(get_db)
-):
-    """
-    Create a new trade entry
-    """
-    try:
-        # For now, return a success response indicating the trade would be created
-        # In a full implementation, this would create the trade in the database
-        return {
-            "success": True,
-            "message": "Trade creation endpoint - implementation pending",
-            "trade_data": {
-                "symbol": trade_data.symbol.upper(),
-                "side": trade_data.side.upper(),
-                "quantity": float(trade_data.quantity),
-                "price": float(trade_data.price),
-                "timestamp": trade_data.timestamp.isoformat() if trade_data.timestamp else datetime.utcnow().isoformat(),
-                "user_id": current_user.id
-            }
-        }
-        
-    except Exception as e:
-        raise ValidationError(f"Error creating trade: {str(e)}")
-
-@router.get("/trades/{trade_id}", response_model=Dict[str, Any])
+@router.get("/trades/{trade_id:int}", response_model=Dict[str, Any])
 async def get_trade_by_id(
     trade_id: int,
     current_user: User = Depends(get_current_active_user),
@@ -350,10 +274,10 @@ async def get_trade_by_id(
             Trade.id == trade_id,
             Trade.user_id == current_user.id
         ).first()
-        
+
         if not trade:
             raise NotFoundError(f"Trade with ID {trade_id} not found")
-        
+
         return {
             "success": True,
             "trade": {
@@ -367,129 +291,57 @@ async def get_trade_by_id(
                 "realized_pnl_usd": float(trade.realized_pnl_usd) if trade.realized_pnl_usd else None
             }
         }
-        
+
     except Exception as e:
         if isinstance(e, NotFoundError):
             raise
         raise DatabaseError(f"Error fetching trade: {str(e)}")
 
-@router.put("/trades/{trade_id}", response_model=Dict[str, Any])
-async def update_trade(
-    trade_id: int,
-    trade_data: CreateTradeRequest,
+@router.get("/trades/{symbol}", response_model=Dict[str, Any])
+async def get_trades_by_symbol(
+    symbol: str,
     current_user: User = Depends(get_current_active_user),
+    limit: int = Query(100, ge=1, le=1000, description="Maximum number of trades to return"),
     db = Depends(get_db)
 ):
     """
-    Update existing trade
+    Get trade history for a specific trading pair
     """
     try:
-        # For now, return a success response indicating the trade would be updated
+        # Basic symbol format validation. (Queries use the ORM with bound
+        # parameters, so this is defense-in-depth, not the SQL-injection guard.)
+        import re
+        if not re.match(r'^[A-Za-z0-9/\-_]{1,20}$', symbol):
+            raise HTTPException(status_code=400, detail="Invalid symbol format")
+
+        trades = db.query(Trade).filter(
+            Trade.user_id == current_user.id,
+            Trade.symbol == symbol.upper()
+        ).order_by(Trade.executed_at.desc()).limit(limit).all()
+
+        trades_list = []
+        for trade in trades:
+            trades_list.append({
+                "id": trade.id,
+                "binance_order_id": trade.binance_order_id,
+                "side": trade.side,
+                "quantity": float(trade.quantity),
+                "price": float(trade.price),
+                "quote_quantity": float(trade.quote_quantity),
+                "commission": float(trade.commission) if trade.commission else None,
+                "executed_at": trade.executed_at.isoformat()
+            })
+
         return {
             "success": True,
-            "message": f"Trade {trade_id} update endpoint - implementation pending",
-            "updated_data": {
-                "trade_id": trade_id,
-                "symbol": trade_data.symbol.upper(),
-                "side": trade_data.side.upper(),
-                "quantity": float(trade_data.quantity),
-                "price": float(trade_data.price),
-                "user_id": current_user.id
-            }
+            "symbol": symbol.upper(),
+            "user_id": current_user.id,
+            "total_trades": len(trades_list),
+            "trades": trades_list
         }
-        
+
+    except HTTPException:
+        # Re-raise HTTP exceptions (like validation errors) without converting them
+        raise
     except Exception as e:
-        raise ValidationError(f"Error updating trade: {str(e)}")
-
-@router.delete("/trades/{trade_id}", response_model=Dict[str, Any])
-async def delete_trade(
-    trade_id: int,
-    current_user: User = Depends(get_current_active_user),
-    db = Depends(get_db)
-):
-    """
-    Delete trade by ID
-    """
-    try:
-        # For now, return a success response indicating the trade would be deleted
-        return {
-            "success": True,
-            "message": f"Trade {trade_id} deletion endpoint - implementation pending",
-            "deleted_trade_id": trade_id,
-            "user_id": current_user.id
-        }
-        
-    except Exception as e:
-        raise ValidationError(f"Error deleting trade: {str(e)}")
-
-@router.get("/trades/history", response_model=Dict[str, Any])
-async def get_trades_history(
-    current_user: User = Depends(get_current_active_user),
-    page: int = Query(1, ge=1, description="Page number"),
-    page_size: int = Query(50, ge=1, le=1000, description="Items per page"),
-    db = Depends(get_db)
-):
-    """
-    Get trade history (alias to main trades endpoint)
-    """
-    return await get_trade_history(current_user, page, page_size, None, None, None, None, db)
-
-@router.post("/trades/import", response_model=Dict[str, Any])
-async def import_trades(
-    current_user: User = Depends(get_current_active_user),
-    db = Depends(get_db)
-):
-    """
-    Import trades from external source
-    """
-    return {
-        "success": True,
-        "message": "Trade import endpoint - implementation pending",
-        "user_id": current_user.id,
-        "status": "Import functionality will be implemented"
-    }
-
-@router.post("/trades/sync", response_model=Dict[str, Any])
-async def sync_trades(
-    current_user: User = Depends(get_current_active_user),
-    db = Depends(get_db)
-):
-    """
-    Sync trades with exchange
-    """
-    return {
-        "success": True,
-        "message": "Trade sync endpoint - implementation pending",
-        "user_id": current_user.id,
-        "status": "Sync functionality will be implemented"
-    }
-
-@router.get("/trades/export", response_model=Dict[str, Any])  
-async def export_trades(
-    current_user: User = Depends(get_current_active_user),
-    db = Depends(get_db)
-):
-    """
-    Export trades data
-    """
-    return {
-        "success": True,
-        "message": "Trade export endpoint - implementation pending",
-        "user_id": current_user.id,
-        "status": "Export functionality will be implemented"
-    }
-
-@router.post("/trades/bulk", response_model=Dict[str, Any])
-async def bulk_trade_operations(
-    current_user: User = Depends(get_current_active_user),
-    db = Depends(get_db)
-):
-    """
-    Bulk trade operations
-    """
-    return {
-        "success": True,
-        "message": "Bulk trade operations endpoint - implementation pending",
-        "user_id": current_user.id,
-        "status": "Bulk operations functionality will be implemented"
-    }
+        raise DatabaseError(f"Error fetching trades for {symbol}: {str(e)}")

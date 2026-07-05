@@ -2,8 +2,10 @@ from binance.client import Client
 from binance.exceptions import BinanceAPIException, BinanceRequestException
 import os
 import time
+import asyncio
+import functools
 from datetime import datetime, timedelta
-from typing import Optional, Dict, Any
+from typing import Optional, Dict, Any, Callable
 from dotenv import load_dotenv
 import logging
 
@@ -12,6 +14,17 @@ load_dotenv()
 # Set up logging for Binance operations
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
+
+
+async def run_sync(func: Callable, *args, **kwargs):
+    """Run a blocking (synchronous) call in the default thread-pool executor.
+
+    python-binance is fully synchronous (requests-based) and its rate limiter
+    uses time.sleep. Calling it directly from an async handler blocks the whole
+    event loop; running it here keeps the loop responsive.
+    """
+    loop = asyncio.get_event_loop()
+    return await loop.run_in_executor(None, functools.partial(func, *args, **kwargs))
 
 class BinanceClientManager:
     def __init__(self):

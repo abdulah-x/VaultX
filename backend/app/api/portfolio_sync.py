@@ -12,12 +12,45 @@ import logging
 
 from core.dependencies import get_db, get_current_active_user
 from core.errors import DatabaseError, ValidationError
-from database.models import User, Holding
-from services.binance.client import BinanceClientManager
+from database.models import User, Holding, Asset
+from services.binance.client import BinanceClientManager, run_sync
 from services.binance.account import BinanceAccountService
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
+
+MAJOR_COINS = {'BTC', 'ETH', 'BNB', 'ADA', 'DOT', 'SOL', 'MATIC', 'AVAX', 'LINK'}
+STABLECOINS = {'USDT', 'USDC', 'BUSD', 'DAI', 'TUSD', 'USDP', 'FDUSD'}
+
+
+def categorize_asset(symbol: str, total_amount: float = 0.0) -> str:
+    """Bucket an asset symbol into major / stable / altcoin / other."""
+    if symbol in MAJOR_COINS:
+        return "major"
+    if symbol in STABLECOINS:
+        return "stable"
+    if total_amount > 0:
+        return "altcoin"
+    return "other"
+
+
+def get_or_create_asset(db: Session, symbol: str) -> Asset:
+    """Fetch the Asset row for a ticker symbol, creating a minimal one if absent.
+
+    Holdings reference assets by FK, so a balance sync must ensure the asset
+    exists before it can upsert the holding.
+    """
+    asset = db.query(Asset).filter(Asset.symbol == symbol).first()
+    if asset is None:
+        asset = Asset(
+            symbol=symbol,
+            name=symbol,
+            asset_type='cryptocurrency',
+            is_base_currency=symbol in STABLECOINS,
+        )
+        db.add(asset)
+        db.flush()  # assign asset.id without ending the transaction
+    return asset
 
 class AdvancedPortfolioSync:
     """Advanced portfolio synchronization with Binance"""
@@ -43,8 +76,8 @@ class AdvancedPortfolioSync:
             
             logger.info(f"🔄 Starting portfolio sync for user {user_id}")
             
-            # Get Binance balances
-            binance_balances = self.binance_service.get_balances()
+            # Get Binance balances (blocking call offloaded to a thread)
+            binance_balances = await run_sync(self.binance_service.get_balances)
             if not binance_balances:
                 return {
                     "success": False,
@@ -113,15 +146,15 @@ class AdvancedPortfolioSync:
         """Get current prices for all assets"""
         prices = {}
         client_manager = BinanceClientManager()
-        client = client_manager.get_client()
-        
+        client = await run_sync(client_manager.get_client)
+
         if not client:
             logger.warning("⚠️ Binance client not available for price fetching")
             return prices
-        
-        # Get all tickers at once (more efficient)
+
+        # Get all tickers at once (blocking call offloaded to a thread)
         try:
-            all_tickers = client.get_all_tickers()
+            all_tickers = await run_sync(client.get_all_tickers)
             ticker_dict = {ticker['symbol']: float(ticker['price']) for ticker in all_tickers}
             
             for balance in balances:
@@ -201,44 +234,49 @@ class AdvancedPortfolioSync:
             created_count = 0
             
             for asset_data in assets:
-                # Check if portfolio entry exists
+                asset = get_or_create_asset(db, asset_data['asset'])
+
+                total_qty = Decimal(str(asset_data['total_amount']))
+                free_qty = Decimal(str(asset_data['free_amount']))
+                locked_qty = Decimal(str(asset_data['locked_amount']))
+                price = Decimal(str(asset_data['price_usd'])) if asset_data['price_usd'] > 0 else None
+                value = Decimal(str(asset_data['value_usd'])) if asset_data['value_usd'] > 0 else None
+
+                # Check if a holding entry exists (keyed by asset FK)
                 existing = db.query(Holding).filter(
                     Holding.user_id == user_id,
-                    Holding.symbol == asset_data['asset']
+                    Holding.asset_id == asset.id
                 ).first()
-                
+
                 if existing:
-                    # Update existing entry
-                    existing.quantity = Decimal(str(asset_data['total_amount']))
-                    existing.current_price = Decimal(str(asset_data['price_usd'])) if asset_data['price_usd'] > 0 else None
-                    existing.current_value = Decimal(str(asset_data['value_usd'])) if asset_data['value_usd'] > 0 else None
-                    existing.last_updated = datetime.utcnow()
-                    existing.metadata = {
-                        "category": asset_data['category'],
-                        "free_amount": asset_data['free_amount'],
-                        "locked_amount": asset_data['locked_amount'],
-                        "percentage_locked": asset_data['percentage_locked']
-                    }
+                    # Update market-facing fields; preserve cost basis, which a
+                    # balance sync cannot recompute (that comes from trade history).
+                    existing.total_quantity = total_qty
+                    existing.available_quantity = free_qty
+                    existing.locked_quantity = locked_qty
+                    existing.current_price_usd = price
+                    existing.current_value_usd = value
+                    if price is not None and existing.total_cost_usd is not None:
+                        existing.unrealized_pnl_usd = (value or Decimal('0')) - existing.total_cost_usd
                     updated_count += 1
                 else:
-                    # Create new entry
-                    new_portfolio = Holding(
+                    # New holding: seed cost basis from current value so initial
+                    # unrealized P&L is zero until real trades are imported.
+                    new_holding = Holding(
                         user_id=user_id,
-                        symbol=asset_data['asset'],
-                        quantity=Decimal(str(asset_data['total_amount'])),
-                        average_price=Decimal(str(asset_data['price_usd'])) if asset_data['price_usd'] > 0 else None,
-                        current_price=Decimal(str(asset_data['price_usd'])) if asset_data['price_usd'] > 0 else None,
-                        current_value=Decimal(str(asset_data['value_usd'])) if asset_data['value_usd'] > 0 else None,
-                        metadata={
-                            "category": asset_data['category'],
-                            "free_amount": asset_data['free_amount'],
-                            "locked_amount": asset_data['locked_amount'],
-                            "percentage_locked": asset_data['percentage_locked']
-                        }
+                        asset_id=asset.id,
+                        total_quantity=total_qty,
+                        available_quantity=free_qty,
+                        locked_quantity=locked_qty,
+                        average_cost_usd=price or Decimal('0'),
+                        total_cost_usd=value or Decimal('0'),
+                        current_price_usd=price,
+                        current_value_usd=value,
+                        unrealized_pnl_usd=Decimal('0'),
                     )
-                    db.add(new_portfolio)
+                    db.add(new_holding)
                     created_count += 1
-            
+
             db.commit()
             
             return {
@@ -299,34 +337,40 @@ async def get_enhanced_portfolio(
     Get enhanced portfolio with categorization and analytics
     """
     try:
-        portfolios = db.query(Holding).filter(Holding.user_id == current_user.id).all()
-        
-        if not portfolios:
+        rows = (
+            db.query(Holding, Asset.symbol)
+            .join(Asset, Holding.asset_id == Asset.id)
+            .filter(Holding.user_id == current_user.id)
+            .all()
+        )
+
+        if not rows:
             return {
                 "success": True,
                 "message": "No portfolio data found. Run sync first.",
                 "portfolios": [],
                 "analytics": {}
             }
-        
+
         # Categorize and analyze
         major_coins = []
         stablecoins = []
         altcoins = []
         others = []
         total_value = Decimal('0')
-        
-        for portfolio in portfolios:
+
+        for holding, symbol in rows:
+            quantity = float(holding.total_quantity or 0)
+            category = categorize_asset(symbol, quantity)
             portfolio_data = {
-                "symbol": portfolio.symbol,
-                "quantity": float(portfolio.quantity),
-                "current_price": float(portfolio.current_price) if portfolio.current_price else 0,
-                "current_value": float(portfolio.current_value) if portfolio.current_value else 0,
-                "category": portfolio.metadata.get('category', 'unknown') if portfolio.metadata else 'unknown',
-                "last_updated": portfolio.last_updated.isoformat() if portfolio.last_updated else None
+                "symbol": symbol,
+                "quantity": quantity,
+                "current_price": float(holding.current_price_usd) if holding.current_price_usd else 0,
+                "current_value": float(holding.current_value_usd) if holding.current_value_usd else 0,
+                "category": category,
+                "last_updated": holding.updated_at.isoformat() if holding.updated_at else None
             }
-            
-            category = portfolio_data['category']
+
             if category == 'major':
                 major_coins.append(portfolio_data)
             elif category == 'stable':
@@ -335,8 +379,8 @@ async def get_enhanced_portfolio(
                 altcoins.append(portfolio_data)
             else:
                 others.append(portfolio_data)
-            
-            total_value += portfolio.current_value or Decimal('0')
+
+            total_value += holding.current_value_usd or Decimal('0')
         
         analytics = {
             "total_value_usd": float(total_value),
@@ -345,7 +389,7 @@ async def get_enhanced_portfolio(
                 "stablecoins": len(stablecoins),
                 "altcoins": len(altcoins),
                 "others": len(others),
-                "total": len(portfolios)
+                "total": len(rows)
             },
             "allocation": {
                 "major_coins_value": sum(p['current_value'] for p in major_coins),

@@ -10,59 +10,32 @@ from datetime import datetime, timedelta
 from typing import Dict, Optional
 import os
 
+from core.redis_client import redis_client
+
 class EmailService:
     """Service for sending OTP emails"""
-    
+
     def __init__(self):
         # Email configuration - use environment variables
         self.smtp_server = os.getenv("SMTP_HOST", "smtp.gmail.com")
         self.smtp_port = int(os.getenv("SMTP_PORT", "587"))
         self.sender_email = os.getenv("SMTP_FROM_EMAIL", os.getenv("SMTP_USERNAME", "noreply@vaultx.com"))
         self.sender_password = os.getenv("SMTP_PASSWORD", "")
-        
-        # OTP storage (in production, use Redis or database)
-        self.otp_storage: Dict[str, Dict] = {}
-    
+
     def generate_otp(self, length: int = 6) -> str:
         """Generate a random OTP code"""
         return ''.join(random.choices(string.digits, k=length))
-    
+
     def store_otp(self, email: str, otp: str, expires_in_minutes: int = 10):
-        """Store OTP with expiration time"""
-        self.otp_storage[email] = {
-            "otp": otp,
-            "created_at": datetime.now(),
-            "expires_at": datetime.now() + timedelta(minutes=expires_in_minutes),
-            "attempts": 0
-        }
-    
+        """Store OTP with expiration time (backed by Redis, survives restarts)."""
+        redis_client.store_otp(email, otp, expires_in_seconds=expires_in_minutes * 60)
+
     def verify_otp(self, email: str, otp: str) -> tuple[bool, str]:
         """
         Verify OTP code
         Returns (is_valid, message)
         """
-        if email not in self.otp_storage:
-            return False, "No OTP found for this email"
-        
-        stored_data = self.otp_storage[email]
-        
-        # Check if OTP has expired
-        if datetime.now() > stored_data["expires_at"]:
-            del self.otp_storage[email]
-            return False, "OTP has expired"
-        
-        # Check attempts
-        if stored_data["attempts"] >= 3:
-            del self.otp_storage[email]
-            return False, "Too many failed attempts"
-        
-        # Verify OTP
-        if stored_data["otp"] == otp:
-            del self.otp_storage[email]
-            return True, "OTP verified successfully"
-        else:
-            stored_data["attempts"] += 1
-            return False, f"Invalid OTP. {3 - stored_data['attempts']} attempts remaining"
+        return redis_client.verify_otp(email, otp)
     
     def send_otp_email(self, recipient_email: str, otp: str) -> bool:
         """
