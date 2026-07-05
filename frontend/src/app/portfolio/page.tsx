@@ -84,15 +84,15 @@ export default function PortfolioPage() {
         id: 'sol',
         asset: 'Solana',
         symbol: 'SOL',
-        quantity: 2.1,
-        marketPrice: 84.5,
+        qty: 2.1,
+        avgBuyPrice: 90.0,
+        lastPrice: 84.5,
         marketValue: 177.45,
-        pnl: '-$12.1',
-        pnlPercentage: '-6.37%',
+        realizedPnL: 0,
+        unrealizedPnL: -11.55,
         allocation: 5.1,
         change24h: -2.3,
-        isPositive: false
-      }
+      },
     ],
     total_portfolio_value_usd: 3489.75
   };
