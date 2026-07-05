@@ -81,8 +81,9 @@ export default function PortfolioPage() {
         change24h: 0.7,
       },
       {
+        id: 'sol',
+        asset: 'Solana',
         symbol: 'SOL',
-        name: 'Solana',
         quantity: 2.1,
         marketPrice: 84.5,
         marketValue: 177.45,
