@@ -13,11 +13,18 @@ DB_DIR.mkdir(exist_ok=True)
 BACKUP_DIR = Path(__file__).parent.parent.parent / "backups"
 BACKUP_DIR.mkdir(exist_ok=True)
 
-# Database configuration - support both SQLite and PostgreSQL
-DATABASE_URL = os.getenv("DATABASE_URL", f"sqlite:///{DB_DIR}/crypto_portfolio.db")
+# Database configuration. PostgreSQL is the committed database; DATABASE_URL is
+# REQUIRED. We no longer silently fall back to SQLite — a missing URL used to
+# create a throwaway .db file that looked like it worked but diverged from prod.
+DATABASE_URL = os.getenv("DATABASE_URL")
+if not DATABASE_URL:
+    raise RuntimeError(
+        "DATABASE_URL is not set. VaultX requires a PostgreSQL connection string, "
+        "e.g. postgresql://user:pass@host:5432/dbname"
+    )
 TEST_DATABASE_URL = f"sqlite:///{DB_DIR}/test_portfolio.db"
 
-# Detect database type
+# Detect database type (SQLite retained only for the isolated test database)
 IS_SQLITE = DATABASE_URL.startswith("sqlite")
 IS_POSTGRES = DATABASE_URL.startswith("postgresql")
 

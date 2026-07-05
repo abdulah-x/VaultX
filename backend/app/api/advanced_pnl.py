@@ -11,8 +11,8 @@ import logging
 from collections import defaultdict
 
 from core.dependencies import get_db, get_current_active_user
-from database.models import User, Holding, Trade
-from services.binance.client import BinanceClientManager
+from database.models import User, Holding, Trade, Asset
+from services.binance.client import BinanceClientManager, run_sync
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
@@ -39,18 +39,33 @@ class AdvancedPnLCalculator:
             # Get user's portfolio and trades
             portfolio_query = db.query(Holding).filter(Holding.user_id == user_id)
             trades_query = db.query(Trade).filter(Trade.user_id == user_id)
-            
+
             if symbol:
-                portfolio_query = portfolio_query.filter(Holding.symbol == symbol.upper())
+                # Holdings reference assets by FK; resolve the symbol to an asset id.
+                filter_asset = db.query(Asset).filter(Asset.symbol == symbol.upper()).first()
+                if filter_asset:
+                    portfolio_query = portfolio_query.filter(Holding.asset_id == filter_asset.id)
+                else:
+                    portfolio_query = portfolio_query.filter(Holding.asset_id == -1)  # no match
                 trades_query = trades_query.filter(Trade.symbol == symbol.upper())
-            
+
             # Date filter for trades
             if days < 365:  # Only apply date filter if not requesting full history
                 start_date = datetime.utcnow() - timedelta(days=days)
                 trades_query = trades_query.filter(Trade.executed_at >= start_date)
-            
+
             portfolios = portfolio_query.all()
             trades = trades_query.all()
+
+            # Resolve each holding's ticker symbol once and attach it, so the
+            # downstream calculators can reference `holding.symbol` (the Holding
+            # model itself only stores an asset_id foreign key).
+            asset_ids = [p.asset_id for p in portfolios]
+            symbol_map = dict(
+                db.query(Asset.id, Asset.symbol).filter(Asset.id.in_(asset_ids)).all()
+            ) if asset_ids else {}
+            for p in portfolios:
+                p.symbol = symbol_map.get(p.asset_id, "")
             
             if not portfolios and not trades:
                 return {
@@ -97,15 +112,15 @@ class AdvancedPnLCalculator:
     async def _get_current_prices(self, portfolios: List[Holding]) -> Dict[str, float]:
         """Get current prices for all portfolio assets"""
         prices = {}
-        client = self.client_manager.get_client()
-        
+        client = await run_sync(self.client_manager.get_client)
+
         if not client:
             logger.warning("⚠️ Binance client not available for price fetching")
             return prices
-        
+
         try:
-            # Get all tickers at once
-            all_tickers = client.get_all_tickers()
+            # Get all tickers at once (blocking call offloaded to a thread)
+            all_tickers = await run_sync(client.get_all_tickers)
             ticker_dict = {ticker['symbol']: float(ticker['price']) for ticker in all_tickers}
             
             for portfolio in portfolios:
@@ -140,8 +155,8 @@ class AdvancedPnLCalculator:
         
         for portfolio in portfolios:
             asset = portfolio.symbol
-            quantity = float(portfolio.quantity)
-            avg_price = float(portfolio.average_price or 0)
+            quantity = float(portfolio.total_quantity)
+            avg_price = float(portfolio.average_cost_usd or 0)
             current_price = current_prices.get(asset, 0)
             
             invested_value = quantity * avg_price
@@ -271,11 +286,11 @@ class AdvancedPnLCalculator:
         
         # Calculate unrealized P&L from current holdings
         for portfolio in portfolios:
-            if portfolio.current_value and portfolio.average_price:
-                quantity = float(portfolio.quantity)
-                avg_price = float(portfolio.average_price)
+            if portfolio.current_value_usd and portfolio.average_cost_usd:
+                quantity = float(portfolio.total_quantity)
+                avg_price = float(portfolio.average_cost_usd)
                 current_price = current_prices.get(portfolio.symbol, avg_price)
-                
+
                 unrealized_pnl += quantity * (current_price - avg_price)
         
         return {
@@ -342,7 +357,7 @@ class AdvancedPnLCalculator:
         
         # Portfolio value
         total_portfolio_value = sum(
-            float(p.current_value or 0) for p in portfolios
+            float(p.current_value_usd or 0) for p in portfolios
         )
         
         return {
@@ -416,7 +431,7 @@ async def get_comprehensive_pnl(
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"P&L calculation failed: {str(e)}")
 
-@router.get("/pnl/summary", response_model=Dict[str, Any])
+@router.get("/pnl/advanced-summary", response_model=Dict[str, Any])
 async def get_advanced_pnl_summary(
     current_user: User = Depends(get_current_active_user),
     db: Session = Depends(get_db)

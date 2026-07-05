@@ -14,6 +14,7 @@ from pathlib import Path
 # Add database to path
 sys.path.append(str(Path(__file__).parent.parent))
 
+from sqlalchemy import func
 from database import SessionLocal, User, Asset, Holding, Trade, CurrentPrice
 from core.dependencies import get_db, get_current_active_user
 from core.errors import DatabaseError, ValidationError, NotFoundError
@@ -90,38 +91,46 @@ async def get_portfolio_pnl(
                 "assets": []
             }
         
+        # Pre-aggregate realized P&L per base asset in a single query. This
+        # replaces a per-holding query (N+1) and the imprecise symbol LIKE match
+        # (which caught unrelated pairs like BTCUP/BTCDOWN for "BTC").
+        realized_rows = (
+            db.query(Trade.base_asset_id, func.sum(Trade.realized_pnl_usd))
+            .filter(
+                Trade.user_id == current_user.id,
+                Trade.realized_pnl_usd.isnot(None),
+            )
+            .group_by(Trade.base_asset_id)
+            .all()
+        )
+        realized_by_asset = {aid: total for aid, total in realized_rows}
+
         # Calculate P&L for each asset
         asset_pnl_list = []
         total_portfolio_value = Decimal('0')
         total_invested = Decimal('0')
         total_unrealized_pnl = Decimal('0')
         total_realized_pnl = Decimal('0')
-        
+
         for holding, symbol, current_price in holdings_data:
             if current_price is None:
                 current_price = Decimal('0')
             else:
                 current_price = Decimal(str(current_price))
-            
+
             quantity = holding.total_quantity
             avg_buy_price = holding.average_cost_usd
             total_cost = holding.total_cost_usd
             current_value = quantity * current_price
-            
+
             # Unrealized P&L
             unrealized_pnl = current_value - total_cost
             unrealized_pnl_pct = (unrealized_pnl / total_cost * 100) if total_cost > 0 else Decimal('0')
-            
-            # Get realized P&L from trades
-            realized_trades = db.query(Trade).filter(
-                Trade.user_id == current_user.id,
-                Trade.symbol.like(f"{symbol}%"),
-                Trade.realized_pnl_usd.isnot(None)
-            ).all()
-            
-            realized_pnl = sum(trade.realized_pnl_usd for trade in realized_trades if trade.realized_pnl_usd)
-            realized_pnl = Decimal(str(realized_pnl)) if realized_pnl else Decimal('0')
-            
+
+            # Realized P&L from the pre-aggregated map (keyed by base asset id)
+            realized_raw = realized_by_asset.get(holding.asset_id)
+            realized_pnl = Decimal(str(realized_raw)) if realized_raw else Decimal('0')
+
             # Total P&L
             total_pnl = unrealized_pnl + realized_pnl
             
@@ -195,13 +204,9 @@ async def get_pnl_summary(
     Get P&L summary overview (simplified version of main P&L endpoint)
     """
     try:
-        # Calculate P&L data directly
-        from sqlalchemy.orm import Session
-        from sqlalchemy import func
-        
         # Get all user's holdings
         holdings = db.query(Holding).filter(Holding.user_id == current_user.id).all()
-        
+
         if not holdings:
             return {
                 "success": True,
@@ -224,20 +229,29 @@ async def get_pnl_summary(
                 }
             }
         
-        # Simple summary calculation
-        total_value = sum(float(h.quantity * h.average_price) for h in holdings)
-        total_invested = sum(float(h.quantity * h.average_price) for h in holdings)
-        
+        # Simple summary calculation using real Holding columns. Current value
+        # falls back to cost basis when a live price hasn't been recorded yet.
+        total_cost = sum((h.total_cost_usd or Decimal('0')) for h in holdings)
+        total_value = sum(
+            (h.current_value_usd if h.current_value_usd is not None else (h.total_cost_usd or Decimal('0')))
+            for h in holdings
+        )
+        total_unrealized = total_value - total_cost
+        total_pnl_pct = (total_unrealized / total_cost * 100) if total_cost > 0 else Decimal('0')
+
+        profitable = sum(1 for h in holdings if (h.unrealized_pnl_usd or 0) > 0)
+        losing = sum(1 for h in holdings if (h.unrealized_pnl_usd or 0) < 0)
+
         summary_data = {
-            "total_portfolio_value": total_value,
-            "total_invested": total_invested,
-            "total_unrealized_pnl": 0.0,
+            "total_portfolio_value": float(total_value),
+            "total_invested": float(total_cost),
+            "total_unrealized_pnl": float(total_unrealized),
             "total_realized_pnl": 0.0,
-            "total_pnl": 0.0,
-            "total_pnl_percentage": 0.0,
+            "total_pnl": float(total_unrealized),
+            "total_pnl_percentage": float(total_pnl_pct),
             "asset_count": len(holdings),
-            "profitable_assets": 0,
-            "losing_assets": 0
+            "profitable_assets": profitable,
+            "losing_assets": losing
         }
         
         # Return the summary
@@ -311,8 +325,13 @@ async def get_realized_pnl(
         )
         
         if symbol:
-            query = query.filter(Trade.symbol.like(f"{symbol}%"))
-        
+            # Resolve the asset and match on base_asset_id for precision.
+            asset = db.query(Asset).filter(Asset.symbol == symbol.upper()).first()
+            if asset:
+                query = query.filter(Trade.base_asset_id == asset.id)
+            else:
+                query = query.filter(Trade.symbol == symbol.upper())
+
         realized_trades = query.order_by(Trade.executed_at.desc()).all()
         
         if not realized_trades:
@@ -591,10 +610,11 @@ async def get_asset_pnl(
         current_price_obj = db.query(CurrentPrice).filter(CurrentPrice.asset_id == asset.id).first()
         current_price = Decimal(str(current_price_obj.price_usd)) if current_price_obj else Decimal('0')
         
-        # Get all trades for this asset
+        # Get all trades for this asset (match on the base asset, not a symbol
+        # prefix, so "BTC" doesn't also pull in BTCUP/BTCDOWN pairs).
         trades = db.query(Trade).filter(
             Trade.user_id == current_user.id,
-            Trade.symbol.like(f"{symbol.upper()}%")
+            Trade.base_asset_id == asset.id
         ).order_by(Trade.executed_at).all()
         
         # Calculate detailed P&L
@@ -655,8 +675,8 @@ async def get_asset_pnl(
     except Exception as e:
         raise DatabaseError(f"Error calculating P&L for {symbol}: {str(e)}")
 
-@router.get("/realized", response_model=Dict[str, Any])
-async def get_realized_pnl(
+@router.get("/pnl/realized-summary", response_model=Dict[str, Any])
+async def get_realized_pnl_summary(
     current_user: User = Depends(get_current_active_user),
     days: int = Query(30, ge=1, le=365, description="Number of days to analyze"),
     db = Depends(get_db)

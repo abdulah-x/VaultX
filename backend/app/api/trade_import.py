@@ -12,10 +12,26 @@ import logging
 from core.dependencies import get_db, get_current_active_user
 from core.errors import DatabaseError, ValidationError
 from database.models import User, Trade
-from services.binance.client import BinanceClientManager
+from services.binance.client import BinanceClientManager, run_sync
+from api.portfolio_sync import get_or_create_asset
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
+
+# Known quote assets, longest first so e.g. "USDT" matches before "USD".
+QUOTE_ASSETS = ['USDT', 'FDUSD', 'BUSD', 'USDC', 'TUSD', 'USDP', 'DAI', 'BTC', 'ETH', 'BNB']
+
+
+def split_symbol(symbol: str):
+    """Split a trading pair like 'BTCUSDT' into ('BTC', 'USDT').
+
+    Falls back to (symbol, 'USDT') if no known quote suffix matches.
+    """
+    symbol = symbol.upper()
+    for quote in QUOTE_ASSETS:
+        if symbol.endswith(quote) and len(symbol) > len(quote):
+            return symbol[: -len(quote)], quote
+    return symbol, 'USDT'
 
 class TradeHistoryImporter:
     """Advanced trade history import from Binance"""
@@ -35,7 +51,7 @@ class TradeHistoryImporter:
         Import trade history from Binance with advanced processing
         """
         try:
-            client = self.client_manager.get_client()
+            client = await run_sync(self.client_manager.get_client)
             if not client:
                 return {
                     "success": False,
@@ -55,7 +71,7 @@ class TradeHistoryImporter:
                 symbols_to_process = [symbol.upper()]
             else:
                 # Get account info to find symbols with trades
-                account_info = client.get_account()
+                account_info = await run_sync(client.get_account)
                 balances = account_info.get('balances', [])
                 
                 # Get symbols that have been traded (have balances or recent activity)
@@ -80,8 +96,9 @@ class TradeHistoryImporter:
             
             for trading_symbol in symbols_to_process:
                 try:
-                    # Get trades for this symbol
-                    trades = client.get_my_trades(
+                    # Get trades for this symbol (blocking call offloaded to a thread)
+                    trades = await run_sync(
+                        client.get_my_trades,
                         symbol=trading_symbol,
                         limit=limit,
                         startTime=int(start_time.timestamp() * 1000),
@@ -132,25 +149,22 @@ class TradeHistoryImporter:
         
         for trade in trades:
             try:
+                base_symbol, quote_symbol = split_symbol(symbol)
                 processed_trade = {
                     "user_id": user_id,
                     "binance_order_id": str(trade.get('orderId', '')),
                     "binance_trade_id": str(trade.get('id', '')),
                     "symbol": symbol,
+                    "base_symbol": base_symbol,
+                    "quote_symbol": quote_symbol,
                     "side": "BUY" if trade.get('isBuyer', False) else "SELL",
+                    "order_type": trade.get('orderType', 'MARKET'),
                     "quantity": Decimal(str(trade.get('qty', '0'))),
                     "price": Decimal(str(trade.get('price', '0'))),
                     "quote_quantity": Decimal(str(trade.get('quoteQty', '0'))),
                     "commission": Decimal(str(trade.get('commission', '0'))),
                     "commission_asset": trade.get('commissionAsset', ''),
                     "executed_at": datetime.fromtimestamp(trade.get('time', 0) / 1000),
-                    "is_maker": trade.get('isMaker', False),
-                    "is_best_match": trade.get('isBestMatch', False),
-                    "metadata": {
-                        "binance_data": trade,
-                        "import_source": "binance_api",
-                        "imported_at": datetime.utcnow().isoformat()
-                    }
                 }
                 processed.append(processed_trade)
                 
@@ -176,34 +190,38 @@ class TradeHistoryImporter:
                 
                 if existing:
                     # Update existing trade if data is different
-                    if (existing.quantity != trade_data['quantity'] or 
+                    if (existing.quantity != trade_data['quantity'] or
                         existing.price != trade_data['price']):
-                        
+
                         existing.quantity = trade_data['quantity']
                         existing.price = trade_data['price']
                         existing.quote_quantity = trade_data['quote_quantity']
                         existing.commission = trade_data['commission']
                         existing.commission_asset = trade_data['commission_asset']
-                        existing.metadata = trade_data['metadata']
-                        existing.updated_at = datetime.utcnow()
                         updated_count += 1
                     else:
                         skipped_count += 1
                 else:
+                    # Resolve the base/quote assets (required FKs on Trade).
+                    base_asset = get_or_create_asset(db, trade_data['base_symbol'])
+                    quote_asset = get_or_create_asset(db, trade_data['quote_symbol'])
+
                     # Create new trade
                     new_trade = Trade(
                         user_id=trade_data['user_id'],
                         binance_order_id=trade_data['binance_order_id'],
                         binance_trade_id=trade_data['binance_trade_id'],
                         symbol=trade_data['symbol'],
+                        base_asset_id=base_asset.id,
+                        quote_asset_id=quote_asset.id,
                         side=trade_data['side'],
+                        order_type=trade_data['order_type'],
                         quantity=trade_data['quantity'],
                         price=trade_data['price'],
                         quote_quantity=trade_data['quote_quantity'],
                         commission=trade_data['commission'],
                         commission_asset=trade_data['commission_asset'],
                         executed_at=trade_data['executed_at'],
-                        metadata=trade_data['metadata']
                     )
                     db.add(new_trade)
                     imported_count += 1

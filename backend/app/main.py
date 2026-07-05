@@ -112,14 +112,19 @@ except ImportError as e:
     print(f"⚠️ Email Verification routes import failed: {e}")
     EMAIL_VERIFICATION_AVAILABLE = False
 
-# Include API routes
+# Include API routes.
+#
+# IMPORTANT ordering rule: the trades and pnl routers contain greedy catch-all
+# routes (`/trades/{symbol}`, `/pnl/{symbol}`). FastAPI matches routes in
+# registration order across all routers, so those catch-alls would swallow the
+# static sub-paths declared in the advanced routers (e.g. `/pnl/comprehensive`,
+# `/trades/analysis`). We therefore register auth/portfolio + all advanced
+# feature routers FIRST, and the catch-all-bearing trades/pnl routers LAST.
 app.include_router(auth_router, prefix="/api", tags=["Authentication"])
 app.include_router(portfolio_router, prefix="/api", tags=["Portfolio"])
-app.include_router(trades_router, prefix="/api", tags=["Trades"])
-app.include_router(pnl_router, prefix="/api", tags=["P&L"])
 app.include_router(binance_test_router, prefix="/api", tags=["Binance Testing"])
 
-# Include advanced features if available
+# Include advanced features if available (before the catch-all routers)
 if PASSWORD_RESET_AVAILABLE:
     app.include_router(password_reset_router, prefix="/api", tags=["Password Reset"])
     print("✅ Password Reset routes registered")
@@ -151,6 +156,11 @@ if BACKUP_AVAILABLE:
 if GOOGLE_AUTH_AVAILABLE:
     app.include_router(google_auth_router, tags=["Google OAuth"])
     print("✅ Google OAuth routes registered")
+
+# Catch-all-bearing routers LAST so their `/{symbol}` routes don't shadow the
+# static advanced routes above.
+app.include_router(trades_router, prefix="/api", tags=["Trades"])
+app.include_router(pnl_router, prefix="/api", tags=["P&L"])
 
 # Health check endpoint
 @app.get("/health")
@@ -313,34 +323,6 @@ async def api_info():
             "core": core_endpoints,
             "advanced": advanced_endpoints
         }
-    }
-
-# Debug endpoint to test token parsing
-@app.get("/api/debug-token")
-async def debug_token(request: Request):
-    """
-    Debug endpoint to see exactly what token is being received
-    """
-    auth_header = request.headers.get("authorization")
-    print(f"🔍 DEBUG - Full Authorization header: '{auth_header}'")
-    
-    if auth_header and auth_header.startswith("Bearer "):
-        token = auth_header[7:]  # Remove "Bearer " prefix
-        print(f"🔍 DEBUG - Extracted token: '{token}'")
-        print(f"🔍 DEBUG - Token length: {len(token)}")
-        print(f"🔍 DEBUG - Token segments: {len(token.split('.'))}")
-        
-        return {
-            "received_header": auth_header,
-            "extracted_token": token,
-            "token_length": len(token),
-            "token_segments": len(token.split('.')),
-            "first_50_chars": token[:50] if len(token) > 50 else token
-        }
-    
-    return {
-        "received_header": auth_header,
-        "error": "No Bearer token found"
     }
 
 # Register error handlers

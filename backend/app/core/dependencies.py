@@ -12,6 +12,7 @@ import uuid
 from database.connection import SessionLocal
 from database.models import User, UserSession
 from core.auth import auth_manager
+from core.config import settings
 from core.errors import AuthenticationError, AuthorizationError
 from core.redis_client import redis_client
 
@@ -43,8 +44,15 @@ async def get_current_user(
         
         # Verify the JWT token
         payload = auth_manager.verify_token(credentials.credentials)
+
+        # Reject special-purpose tokens (e.g. password reset) as API credentials.
+        # These are issued for a single flow and must never authenticate requests.
+        token_type = payload.get("type")
+        if token_type and token_type != "access":
+            raise AuthenticationError("This token cannot be used for authentication")
+
         user_id_str: str = payload.get("sub")
-        
+
         if user_id_str is None:
             raise AuthenticationError("Invalid token payload")
         
@@ -90,6 +98,21 @@ async def get_current_verified_user(
     """
     if not current_user.is_verified:
         raise AuthorizationError("User account is not verified")
+    return current_user
+
+async def require_admin(
+    current_user: User = Depends(get_current_active_user)
+) -> User:
+    """
+    Require the current user to be an administrator.
+
+    Admins are defined by the ADMIN_EMAILS setting (comma-separated). The list is
+    empty by default, so privileged routes (e.g. database backup/restore) are
+    locked down until an operator explicitly opts specific accounts in.
+    """
+    admins = settings.admin_email_list
+    if not current_user.email or current_user.email.lower() not in admins:
+        raise AuthorizationError("Administrator privileges required")
     return current_user
 
 async def get_optional_current_user(

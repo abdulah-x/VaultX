@@ -7,9 +7,9 @@ from pydantic import BaseModel
 from typing import List, Optional
 from datetime import datetime
 
-from app.services.backup_service import backup_service
-from app.core.dependencies import get_current_user
-from app.database.models import User
+from services.backup_service import backup_service
+from core.dependencies import require_admin
+from database.models import User
 
 router = APIRouter(prefix="/api/backup", tags=["Backup & Restore"])
 
@@ -36,7 +36,7 @@ class BackupResponse(BaseModel):
 async def create_backup(
     request: BackupRequest,
     background_tasks: BackgroundTasks,
-    current_user: User = Depends(get_current_user)
+    current_user: User = Depends(require_admin)
 ):
     """
     Create a new database backup
@@ -61,7 +61,7 @@ async def create_backup(
 
 
 @router.get("/list", response_model=BackupResponse)
-async def list_backups(current_user: User = Depends(get_current_user)):
+async def list_backups(current_user: User = Depends(require_admin)):
     """
     List all available database backups
     
@@ -82,7 +82,7 @@ async def list_backups(current_user: User = Depends(get_current_user)):
 @router.post("/restore", response_model=BackupResponse)
 async def restore_backup(
     request: RestoreRequest,
-    current_user: User = Depends(get_current_user)
+    current_user: User = Depends(require_admin)
 ):
     """
     Restore database from a backup file
@@ -109,7 +109,7 @@ async def restore_backup(
 @router.delete("/delete/{backup_file}", response_model=BackupResponse)
 async def delete_backup(
     backup_file: str,
-    current_user: User = Depends(get_current_user)
+    current_user: User = Depends(require_admin)
 ):
     """
     Delete a specific backup file
@@ -133,7 +133,7 @@ async def delete_backup(
 @router.post("/cleanup", response_model=BackupResponse)
 async def cleanup_old_backups(
     request: CleanupRequest,
-    current_user: User = Depends(get_current_user)
+    current_user: User = Depends(require_admin)
 ):
     """
     Clean up old backups, keeping only the most recent N backups
@@ -153,7 +153,7 @@ async def cleanup_old_backups(
 
 
 @router.get("/info", response_model=BackupResponse)
-async def get_database_info(current_user: User = Depends(get_current_user)):
+async def get_database_info(current_user: User = Depends(require_admin)):
     """
     Get information about the current database
     
@@ -174,7 +174,7 @@ async def get_database_info(current_user: User = Depends(get_current_user)):
 @router.post("/auto-backup", response_model=BackupResponse)
 async def auto_backup(
     background_tasks: BackgroundTasks,
-    current_user: User = Depends(get_current_user)
+    current_user: User = Depends(require_admin)
 ):
     """
     Create an automatic daily backup

@@ -12,6 +12,7 @@ import re
 
 from core.dependencies import get_db
 from core.auth import auth_manager
+from core.config import settings
 from core.errors import AuthenticationError, NotFoundError, DatabaseError
 from database.models import User
 from services.email_service import email_service
@@ -68,8 +69,7 @@ async def forgot_password(
         )
         
         # Send reset email
-        frontend_url = "http://localhost:3100"  # TODO: Get from env
-        reset_url = f"{frontend_url}/reset-password"
+        reset_url = f"{settings.frontend_url}/reset-password"
         
         email_sent = email_service.send_password_reset_email(
             recipient_email=user.email,

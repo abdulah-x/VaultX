@@ -78,6 +78,69 @@ class RedisClient:
             # On error, assume token is not blacklisted (fail-safe)
             return False
     
+    # ---- OTP storage (email verification / registration codes) ----
+
+    def store_otp(self, email: str, otp: str, expires_in_seconds: int = 600, max_attempts: int = 3) -> bool:
+        """Store an OTP for an email with an expiry and attempt counter."""
+        payload = json.dumps({"otp": otp, "attempts": 0, "max_attempts": max_attempts})
+        try:
+            if self.connected:
+                return bool(self.redis_client.setex(f"otp:{email}", expires_in_seconds, payload))
+            # in-memory fallback
+            if not hasattr(self, "_memory_otp"):
+                self._memory_otp = {}
+            self._memory_otp[email] = {
+                "otp": otp,
+                "attempts": 0,
+                "max_attempts": max_attempts,
+                "expires_at": datetime.utcnow() + timedelta(seconds=expires_in_seconds),
+            }
+            return True
+        except Exception as e:
+            print(f"❌ Error storing OTP: {e}")
+            return False
+
+    def verify_otp(self, email: str, otp: str) -> tuple[bool, str]:
+        """Verify an OTP, enforcing expiry and a max-attempts limit."""
+        try:
+            if self.connected:
+                key = f"otp:{email}"
+                raw = self.redis_client.get(key)
+                if not raw:
+                    return False, "No OTP found or it has expired"
+                data = json.loads(raw)
+                if data["otp"] == otp:
+                    self.redis_client.delete(key)
+                    return True, "OTP verified successfully"
+                data["attempts"] += 1
+                if data["attempts"] >= data["max_attempts"]:
+                    self.redis_client.delete(key)
+                    return False, "Too many failed attempts"
+                # Preserve remaining TTL while updating the attempt counter
+                ttl = self.redis_client.ttl(key)
+                self.redis_client.setex(key, ttl if ttl and ttl > 0 else 600, json.dumps(data))
+                return False, f"Invalid OTP. {data['max_attempts'] - data['attempts']} attempts remaining"
+
+            # in-memory fallback
+            store = getattr(self, "_memory_otp", {})
+            data = store.get(email)
+            if not data:
+                return False, "No OTP found or it has expired"
+            if datetime.utcnow() > data["expires_at"]:
+                store.pop(email, None)
+                return False, "OTP has expired"
+            if data["otp"] == otp:
+                store.pop(email, None)
+                return True, "OTP verified successfully"
+            data["attempts"] += 1
+            if data["attempts"] >= data["max_attempts"]:
+                store.pop(email, None)
+                return False, "Too many failed attempts"
+            return False, f"Invalid OTP. {data['max_attempts'] - data['attempts']} attempts remaining"
+        except Exception as e:
+            print(f"❌ Error verifying OTP: {e}")
+            return False, "OTP verification error"
+
     def cleanup_expired_tokens(self):
         """
         Clean up expired tokens (Redis handles this automatically)

@@ -1,8 +1,10 @@
+name: VaultX
+
 services:
   # 1. Database (Starts First)
   postgres:
     image: postgres:15-alpine
-    container_name: VaultX-postgres
+    container_name: VaultX-Database
     environment:
       POSTGRES_DB: crypto_portfolio
       POSTGRES_USER: crypto_user
@@ -22,15 +24,32 @@ services:
       timeout: 5s
       retries: 5
 
+  # 1b. Redis (token blacklist + OTP store)
+  redis:
+    image: redis:7-alpine
+    container_name: VaultX-Redis
+    ports:
+      - "6380:6379"
+    networks:
+      - vaultx_network
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
   # 2. Backend (Starts Second, depends on DB)
   backend:
     build: ./backend
-    container_name: VaultX-backend
+    container_name: VaultX-Backend
     ports:
       - "8001:8000"
     environment:
       - DEBUG=true
       - DATABASE_URL=postgresql://crypto_user:crypto_password@postgres:5432/crypto_portfolio
+      - REDIS_URL=redis://redis:6379/0
+      - FRONTEND_URL=http://localhost:3100
       # Google OAuth
       - GOOGLE_CLIENT_ID=${GOOGLE_CLIENT_ID}
       - GOOGLE_CLIENT_SECRET=${GOOGLE_CLIENT_SECRET}
@@ -44,6 +63,8 @@ services:
       - vaultx_network
     depends_on:
       postgres:
+        condition: service_healthy
+      redis:
         condition: service_healthy
     restart: unless-stopped
     healthcheck:
@@ -60,7 +81,7 @@ services:
       args:
         - NEXT_PUBLIC_API_URL=http://localhost:8001
         - NEXT_PUBLIC_GOOGLE_CLIENT_ID=${GOOGLE_CLIENT_ID}
-    container_name: VaultX-frontend
+    container_name: VaultX-Frontend
     ports:
       - "3100:3000"
     environment:
