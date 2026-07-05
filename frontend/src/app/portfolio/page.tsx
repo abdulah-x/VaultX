@@ -55,8 +55,9 @@ export default function PortfolioPage() {
   const mockPortfolioData = {
     holdings: [
       {
+        id: 'btc',
+        asset: 'Bitcoin',
         symbol: 'BTC',
-        name: 'Bitcoin',
         quantity: 0.0234,
         marketPrice: 67500,
         marketValue: 1579.5,
