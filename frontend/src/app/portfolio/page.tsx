@@ -52,6 +52,7 @@ export default function PortfolioPage() {
     setSelectedTimeframe(timeframe);
   };
 
+  // Placeholder data shown until the live portfolio endpoint is wired up.
   const mockPortfolioData = {
     holdings: [
       {
