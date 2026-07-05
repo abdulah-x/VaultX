@@ -68,8 +68,9 @@ export default function PortfolioPage() {
         change24h: 1.1,
       },
       {
+        id: 'eth',
+        asset: 'Ethereum',
         symbol: 'ETH',
-        name: 'Ethereum',
         quantity: 0.456,
         marketPrice: 3800,
         marketValue: 1732.8,
