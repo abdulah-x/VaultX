@@ -3,3 +3,4 @@ VaultX brand notes
 2. The product promise centers on seeing risk, performance, and opportunity in one view.
 3. Public-facing visuals should stay premium, restrained, and data-driven.
 4. Dashboard surfaces should prioritize clarity, density, and fast scanning.
+5. Motion should explain portfolio state changes instead of decorating empty space.
