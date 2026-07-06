@@ -36,6 +36,10 @@ pytz==2023.3
 # External APIs
 python-binance==1.0.19
 
+# LLM Portfolio Advisor
+langchain-core==0.3.15
+langchain-google-genai==2.0.7
+
 # Development & Testing
 pytest==7.4.3
 pytest-asyncio==0.21.1

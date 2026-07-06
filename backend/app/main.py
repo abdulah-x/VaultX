@@ -112,6 +112,13 @@ except ImportError as e:
     print(f"⚠️ Email Verification routes import failed: {e}")
     EMAIL_VERIFICATION_AVAILABLE = False
 
+try:
+    from api.advisor import router as advisor_router
+    ADVISOR_AVAILABLE = True
+except ImportError as e:
+    print(f"⚠️ Portfolio Advisor routes import failed: {e}")
+    ADVISOR_AVAILABLE = False
+
 # Include API routes.
 #
 # IMPORTANT ordering rule: the trades and pnl routers contain greedy catch-all
@@ -148,6 +155,10 @@ if REALTIME_PRICES_AVAILABLE:
 if ADVANCED_PNL_AVAILABLE:
     app.include_router(advanced_pnl_router, prefix="/api", tags=["Advanced P&L"])
     print("✅ Advanced P&L routes registered")
+
+if ADVISOR_AVAILABLE:
+    app.include_router(advisor_router, prefix="/api", tags=["Advisor"])
+    print("✅ Portfolio Advisor routes registered")
 
 if BACKUP_AVAILABLE:
     app.include_router(backup_router, tags=["Backup & Restore"])

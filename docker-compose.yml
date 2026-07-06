@@ -56,6 +56,8 @@ services:
       # Google OAuth
       - GOOGLE_CLIENT_ID=${GOOGLE_CLIENT_ID}
       - GOOGLE_CLIENT_SECRET=${GOOGLE_CLIENT_SECRET}
+      # Google Gemini (LLM Portfolio Advisor) - server-side only
+      - GEMINI_API_KEY=${GEMINI_API_KEY}
       # Allow frontend to access backend
       - ALLOWED_ORIGINS=["http://localhost:3100", "http://127.0.0.1:3100"]
     volumes:

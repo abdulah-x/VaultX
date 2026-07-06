@@ -53,7 +53,10 @@ class Settings(BaseSettings):
     google_client_id: Optional[str] = None
     google_client_secret: Optional[str] = None
     google_redirect_uri: Optional[str] = None
-    
+
+    # Google Gemini (LLM Portfolio Advisor) - server-side only, never exposed to the frontend
+    gemini_api_key: Optional[str] = None
+
     # Security Settings
     enable_api_encryption: bool = True
     allowed_ips: str = "localhost,127.0.0.1"
