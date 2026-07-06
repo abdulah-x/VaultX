@@ -8,3 +8,4 @@ VaultX brand notes
 7. Typography should separate editorial landing moments from practical in-app interfaces.
 8. Financial values should use tabular or monospace styling for trustworthy alignment.
 9. Color should communicate meaning first: cyan for signal, green for gains, orange/red for risk.
+10. Every marketing section should prove account intelligence, not just describe features.
