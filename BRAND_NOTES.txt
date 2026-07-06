@@ -4,3 +4,4 @@ VaultX brand notes
 3. Public-facing visuals should stay premium, restrained, and data-driven.
 4. Dashboard surfaces should prioritize clarity, density, and fast scanning.
 5. Motion should explain portfolio state changes instead of decorating empty space.
+6. Logo usage should preserve the hex vault mark as the primary compact identity.
