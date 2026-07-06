@@ -5,3 +5,4 @@ VaultX brand notes
 4. Dashboard surfaces should prioritize clarity, density, and fast scanning.
 5. Motion should explain portfolio state changes instead of decorating empty space.
 6. Logo usage should preserve the hex vault mark as the primary compact identity.
+7. Typography should separate editorial landing moments from practical in-app interfaces.
