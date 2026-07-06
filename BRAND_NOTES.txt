@@ -1,3 +1,4 @@
 VaultX brand notes
 1. VaultX should feel like a serious portfolio intelligence layer, not a generic crypto tracker.
 2. The product promise centers on seeing risk, performance, and opportunity in one view.
+3. Public-facing visuals should stay premium, restrained, and data-driven.
