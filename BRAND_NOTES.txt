@@ -7,3 +7,4 @@ VaultX brand notes
 6. Logo usage should preserve the hex vault mark as the primary compact identity.
 7. Typography should separate editorial landing moments from practical in-app interfaces.
 8. Financial values should use tabular or monospace styling for trustworthy alignment.
+9. Color should communicate meaning first: cyan for signal, green for gains, orange/red for risk.
