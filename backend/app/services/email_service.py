@@ -2,7 +2,7 @@
 Email Service for sending OTP verification codes
 """
 import smtplib
-import random
+import secrets
 import string
 from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
@@ -23,8 +23,8 @@ class EmailService:
         self.sender_password = os.getenv("SMTP_PASSWORD", "")
 
     def generate_otp(self, length: int = 6) -> str:
-        """Generate a random OTP code"""
-        return ''.join(random.choices(string.digits, k=length))
+        """Generate a cryptographically secure random OTP code."""
+        return ''.join(secrets.choice(string.digits) for _ in range(length))
 
     def store_otp(self, email: str, otp: str, expires_in_minutes: int = 10):
         """Store OTP with expiration time (backed by Redis, survives restarts)."""

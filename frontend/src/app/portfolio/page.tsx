@@ -52,44 +52,51 @@ export default function PortfolioPage() {
     setSelectedTimeframe(timeframe);
   };
 
+  // Placeholder data shown until the live portfolio endpoint is wired up.
+  // Field names mirror the backend Holding model (qty, avgBuyPrice, lastPrice,
+  // realizedPnL, unrealizedPnL) so the swap to real data is a drop-in.
+  // TODO(Phase 4): replace with a usePortfolioSummary React Query hook.
   const mockPortfolioData = {
     holdings: [
       {
+        id: 'btc',
+        asset: 'Bitcoin',
         symbol: 'BTC',
-        name: 'Bitcoin',
-        quantity: 0.0234,
-        marketPrice: 67500,
+        qty: 0.0234,
+        avgBuyPrice: 60500,
+        lastPrice: 67500,
         marketValue: 1579.5,
-        pnl: '+$156.7',
-        pnlPercentage: '+11.02%',
+        realizedPnL: 0,
+        unrealizedPnL: 163.7,
         allocation: 45.4,
         change24h: 1.1,
-        isPositive: true
       },
       {
+        id: 'eth',
+        asset: 'Ethereum',
         symbol: 'ETH',
-        name: 'Ethereum',
-        quantity: 0.456,
-        marketPrice: 3800,
+        qty: 0.456,
+        avgBuyPrice: 3600,
+        lastPrice: 3800,
         marketValue: 1732.8,
-        pnl: '+$89.3',
-        pnlPercentage: '+5.43%',
+        realizedPnL: 0,
+        unrealizedPnL: 91.2,
         allocation: 49.8,
         change24h: 0.7,
-        isPositive: true
       },
       {
+        id: 'sol',
+        asset: 'Solana',
         symbol: 'SOL',
-        name: 'Solana',
-        quantity: 2.1,
-        marketPrice: 84.5,
+        qty: 2.1,
+        avgBuyPrice: 90.0,
+        lastPrice: 84.5,
         marketValue: 177.45,
-        pnl: '-$12.1',
-        pnlPercentage: '-6.37%',
+        realizedPnL: 0,
+        unrealizedPnL: -11.55,
         allocation: 5.1,
         change24h: -2.3,
-        isPositive: false
-      }
+      },
     ],
     total_portfolio_value_usd: 3489.75
   };

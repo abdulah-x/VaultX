@@ -28,13 +28,16 @@ services:
   redis:
     image: redis:7-alpine
     container_name: VaultX-Redis
+    command: ["redis-server", "--requirepass", "${REDIS_PASSWORD:-changeme_dev_redis_password}"]
     ports:
-      - "6380:6379"
+      # Bound to localhost only — Redis holds the JWT blacklist and OTP codes,
+      # so it must not be reachable from the LAN/internet.
+      - "127.0.0.1:6380:6379"
     networks:
       - vaultx_network
     restart: unless-stopped
     healthcheck:
-      test: ["CMD", "redis-cli", "ping"]
+      test: ["CMD", "redis-cli", "-a", "${REDIS_PASSWORD:-changeme_dev_redis_password}", "ping"]
       interval: 5s
       timeout: 5s
       retries: 5
@@ -48,7 +51,7 @@ services:
     environment:
       - DEBUG=true
       - DATABASE_URL=postgresql://crypto_user:crypto_password@postgres:5432/crypto_portfolio
-      - REDIS_URL=redis://redis:6379/0
+      - REDIS_URL=redis://:${REDIS_PASSWORD:-changeme_dev_redis_password}@redis:6379/0
       - FRONTEND_URL=http://localhost:3100
       # Google OAuth
       - GOOGLE_CLIENT_ID=${GOOGLE_CLIENT_ID}
