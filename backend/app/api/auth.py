@@ -22,6 +22,7 @@ from core.errors import (
 )
 from database.models import User, UserSession
 from core.redis_client import redis_client
+from core.audit import log_audit_event
 
 router = APIRouter()
 
@@ -112,21 +113,27 @@ async def register_user(
     """
     Register a new user account
     """
+    client_ip = request.client.host if request.client else "unknown"
+    user_agent = request.headers.get("user-agent", "unknown")
     try:
         # Check if username or email already exists
         existing_user = db.query(User).filter(
             (User.username == user_data.username) | (User.email == user_data.email)
         ).first()
-        
+
         if existing_user:
             if existing_user.username == user_data.username:
+                log_audit_event(db, None, "register", f"Registration failed: username '{user_data.username}' already taken",
+                                 ip_address=client_ip, user_agent=user_agent, success=False, error_message="username_taken")
                 raise ValidationError("Username already taken")
             else:
+                log_audit_event(db, None, "register", f"Registration failed: email already registered",
+                                 ip_address=client_ip, user_agent=user_agent, success=False, error_message="email_taken")
                 raise ValidationError("Email already registered")
-        
+
         # Create new user
         hashed_password = auth_manager.get_password_hash(user_data.password)
-        
+
         new_user = User(
             username=user_data.username,
             email=user_data.email,
@@ -138,27 +145,27 @@ async def register_user(
             is_active=True,
             is_verified=False  # Require email verification
         )
-        
+
         db.add(new_user)
         db.commit()
         db.refresh(new_user)
-        
+
         # Create access token
         token_data = {"sub": str(new_user.id), "username": new_user.username}
         access_token = auth_manager.create_access_token(token_data)
-        
+
         # Create user session
-        client_ip = request.client.host if request.client else "unknown"
-        user_agent = request.headers.get("user-agent", "unknown")
-        
         auth_manager.create_user_session(
             db, new_user.id, user_agent, client_ip
         )
-        
+
         # Update last login
         new_user.last_login = datetime.utcnow()
         db.commit()
-        
+
+        log_audit_event(db, new_user.id, "register", f"User '{new_user.username}' registered",
+                         entity_type="user", entity_id=new_user.id, ip_address=client_ip, user_agent=user_agent)
+
         return TokenResponse(
             access_token=access_token,
             token_type="bearer",
@@ -170,7 +177,7 @@ async def register_user(
                 "is_verified": new_user.is_verified
             }
         )
-        
+
     except ValidationError:
         raise
     except Exception as e:
@@ -185,32 +192,38 @@ async def login_user(
     """
     Authenticate user and return access token
     """
+    client_ip = request.client.host if request.client else "unknown"
+    user_agent = request.headers.get("user-agent", "unknown")
     try:
         # Authenticate user
         user = auth_manager.authenticate_user(db, login_data.username, login_data.password)
-        
+
         if not user:
+            log_audit_event(db, None, "login", f"Login failed for '{login_data.username}': invalid credentials",
+                             ip_address=client_ip, user_agent=user_agent, success=False, error_message="invalid_credentials")
             raise AuthenticationError("Invalid username/email or password")
-        
+
         if not user.is_active:
+            log_audit_event(db, user.id, "login", f"Login failed for '{user.username}': account disabled",
+                             ip_address=client_ip, user_agent=user_agent, success=False, error_message="account_disabled")
             raise AuthenticationError("Account is disabled")
-        
+
         # Create access token
         token_data = {"sub": str(user.id), "username": user.username}
         access_token = auth_manager.create_access_token(token_data)
-        
+
         # Create user session
-        client_ip = request.client.host if request.client else "unknown"
-        user_agent = request.headers.get("user-agent", "unknown")
-        
         auth_manager.create_user_session(
             db, user.id, user_agent, client_ip
         )
-        
+
         # Update last login
         user.last_login = datetime.utcnow()
         db.commit()
-        
+
+        log_audit_event(db, user.id, "login", f"User '{user.username}' logged in",
+                         entity_type="user", entity_id=user.id, ip_address=client_ip, user_agent=user_agent)
+
         return TokenResponse(
             access_token=access_token,
             token_type="bearer",
@@ -222,7 +235,7 @@ async def login_user(
                 "is_verified": user.is_verified
             }
         )
-        
+
     except AuthenticationError:
         raise
     except Exception as e:
@@ -230,6 +243,7 @@ async def login_user(
 
 @router.get("/auth/logout")
 async def logout_user_get(
+    request: Request,
     current_user: User = Depends(get_current_active_user),
     current_token: str = Depends(get_current_token),
     db: Session = Depends(get_db)
@@ -245,6 +259,11 @@ async def logout_user_get(
         if remaining_seconds > 0:
             token_invalidated = bool(redis_client.blacklist_token(current_token, remaining_seconds))
 
+        log_audit_event(db, current_user.id, "logout", f"User '{current_user.username}' logged out (GET)",
+                         entity_type="user", entity_id=current_user.id,
+                         ip_address=request.client.host if request.client else "unknown",
+                         user_agent=request.headers.get("user-agent", "unknown"))
+
         return {
             "message": "Successfully logged out",
             "method": "GET",
@@ -256,6 +275,7 @@ async def logout_user_get(
 
 @router.post("/auth/logout")
 async def logout_user(
+    request: Request,
     current_user: User = Depends(get_current_active_user),
     current_token: str = Depends(get_current_token),
     db: Session = Depends(get_db)
@@ -268,37 +288,43 @@ async def logout_user(
         payload = auth_manager.verify_token(current_token)
         exp_timestamp = payload.get("exp", 0)
         current_timestamp = datetime.utcnow().timestamp()
-        
+
         # Calculate remaining time until token expires
         remaining_seconds = max(0, int(exp_timestamp - current_timestamp))
-        
+
+        log_audit_event(db, current_user.id, "logout", f"User '{current_user.username}' logged out (POST)",
+                         entity_type="user", entity_id=current_user.id,
+                         ip_address=request.client.host if request.client else "unknown",
+                         user_agent=request.headers.get("user-agent", "unknown"))
+
         # Blacklist the token for its remaining lifetime
         if remaining_seconds > 0:
             success = redis_client.blacklist_token(current_token, remaining_seconds)
             if success:
                 return {
-                    "message": "Successfully logged out", 
+                    "message": "Successfully logged out",
                     "method": "POST",
                     "token_invalidated": True
                 }
             else:
                 return {
-                    "message": "Logged out (token blacklisting unavailable)", 
+                    "message": "Logged out (token blacklisting unavailable)",
                     "method": "POST",
                     "token_invalidated": False
                 }
         else:
             return {
-                "message": "Successfully logged out (token already expired)", 
+                "message": "Successfully logged out (token already expired)",
                 "method": "POST",
                 "token_invalidated": True
             }
-        
+
     except Exception as e:
         raise DatabaseError(f"Logout failed: {str(e)}")
 
 @router.post("/auth/logout-all")
 async def logout_all_devices(
+    request: Request,
     current_user: User = Depends(get_current_active_user),
     current_token: str = Depends(get_current_token),
     db: Session = Depends(get_db)
@@ -309,16 +335,21 @@ async def logout_all_devices(
     try:
         # Invalidate database sessions
         auth_manager.invalidate_user_sessions(db, current_user.id)
-        
+
         # Also blacklist current token
         payload = auth_manager.verify_token(current_token)
         exp_timestamp = payload.get("exp", 0)
         current_timestamp = datetime.utcnow().timestamp()
         remaining_seconds = max(0, int(exp_timestamp - current_timestamp))
-        
+
         if remaining_seconds > 0:
             redis_client.blacklist_token(current_token, remaining_seconds)
-        
+
+        log_audit_event(db, current_user.id, "logout_all", f"User '{current_user.username}' logged out from all devices",
+                         entity_type="user", entity_id=current_user.id,
+                         ip_address=request.client.host if request.client else "unknown",
+                         user_agent=request.headers.get("user-agent", "unknown"))
+
         return {
             "message": "Successfully logged out from all devices",
             "current_token_invalidated": True

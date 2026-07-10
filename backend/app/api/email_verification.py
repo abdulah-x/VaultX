@@ -4,7 +4,7 @@ Email Verification API endpoints
 Send and verify OTP codes for email verification
 """
 
-from fastapi import APIRouter, Depends, status
+from fastapi import APIRouter, Depends, Request, status
 from sqlalchemy.orm import Session
 from pydantic import BaseModel, EmailStr
 from datetime import datetime
@@ -13,6 +13,7 @@ from core.dependencies import get_db, get_current_user
 from core.errors import ValidationError, NotFoundError
 from database.models import User
 from services.email_service import email_service
+from core.audit import log_audit_event
 
 router = APIRouter()
 
@@ -72,6 +73,7 @@ async def send_verification_email(
 @router.post("/auth/verify-email")
 async def verify_email(
     request: VerifyEmailRequest,
+    http_request: Request,
     db: Session = Depends(get_db)
 ):
     """
@@ -80,32 +82,37 @@ async def verify_email(
     try:
         # Check if user exists
         user = db.query(User).filter(User.email == request.email).first()
-        
+
         if not user:
             raise NotFoundError("User not found")
-        
+
         if user.is_verified:
             return {
                 "message": "Email is already verified",
                 "verified": True
             }
-        
+
         # Verify OTP
         is_valid, message = email_service.verify_otp(request.email, request.otp)
-        
+
         if not is_valid:
             raise ValidationError(message)
-        
+
         # Mark user as verified
         user.is_verified = True
         user.updated_at = datetime.utcnow()
         db.commit()
-        
+
+        log_audit_event(db, user.id, "email_verified", f"Email verified for '{user.username}'",
+                         entity_type="user", entity_id=user.id,
+                         ip_address=http_request.client.host if http_request.client else "unknown",
+                         user_agent=http_request.headers.get("user-agent", "unknown"))
+
         return {
             "message": "Email verified successfully",
             "verified": True
         }
-        
+
     except (ValidationError, NotFoundError):
         raise
     except Exception as e:

@@ -10,19 +10,15 @@ from .connection import (
 
 from .models import (
     User, UserSession, Asset, CurrentPrice, PriceHistory,
-    Trade, Transaction, Holding, PortfolioSnapshot,
-    PerformanceMetric, Achievement, UserAchievement,
-    UserStreak, SystemSetting, AuditLog, SyncHistory
+    Trade, Holding, PerformanceMetric, AuditLog
 )
 
 __all__ = [
     # Database connection
-    "get_database", "create_all_tables", "drop_all_tables", 
+    "get_database", "create_all_tables", "drop_all_tables",
     "get_database_info", "engine", "SessionLocal", "Base",
-    
+
     # Models
     "User", "UserSession", "Asset", "CurrentPrice", "PriceHistory",
-    "Trade", "Transaction", "Holding", "PortfolioSnapshot",
-    "PerformanceMetric", "Achievement", "UserAchievement",
-    "UserStreak", "SystemSetting", "AuditLog", "SyncHistory"
+    "Trade", "Holding", "PerformanceMetric", "AuditLog"
 ]

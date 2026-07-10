@@ -11,6 +11,7 @@ import logging
 
 from core.dependencies import get_db, get_current_active_user
 from core.errors import DatabaseError, ValidationError
+from core.audit import log_audit_event
 from database.models import User, Trade
 from services.binance.client import BinanceClientManager, run_sync
 from api.portfolio_sync import get_or_create_asset
@@ -257,9 +258,16 @@ async def import_trade_history(
         result = await trade_importer.import_trade_history(
             current_user.id, db, symbol, limit, days_back
         )
+        log_audit_event(db, current_user.id, "trade_import",
+                         f"Trade import for '{current_user.username}': {result.get('message', '')}",
+                         entity_type="user", entity_id=current_user.id,
+                         success=bool(result.get("success", False)),
+                         error_message=None if result.get("success") else str(result.get("message")))
         return result
-        
+
     except Exception as e:
+        log_audit_event(db, current_user.id, "trade_import", f"Trade import failed for '{current_user.username}'",
+                         entity_type="user", entity_id=current_user.id, success=False, error_message=str(e))
         raise HTTPException(status_code=500, detail=f"Import failed: {str(e)}")
 
 @router.get("/trades/analysis", response_model=Dict[str, Any])

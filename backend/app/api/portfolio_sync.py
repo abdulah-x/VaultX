@@ -12,6 +12,7 @@ import logging
 
 from core.dependencies import get_db, get_current_active_user
 from core.errors import DatabaseError, ValidationError
+from core.audit import log_audit_event
 from database.models import User, Holding, Asset
 from services.binance.client import BinanceClientManager, run_sync
 from services.binance.account import BinanceAccountService
@@ -232,9 +233,29 @@ class AdvancedPortfolioSync:
         try:
             updated_count = 0
             created_count = 0
-            
+
+            # Batch-resolve assets: one query for all known symbols, instead of
+            # one query per asset in the loop below.
+            symbols = [asset_data['asset'] for asset_data in assets]
+            existing_assets = db.query(Asset).filter(Asset.symbol.in_(symbols)).all()
+            asset_by_symbol = {a.symbol: a for a in existing_assets}
+            for symbol in symbols:
+                if symbol not in asset_by_symbol:
+                    # Rare path: first time this symbol is seen, still needs its
+                    # own insert to get an id.
+                    asset_by_symbol[symbol] = get_or_create_asset(db, symbol)
+
+            # Batch-resolve existing holdings for this user across all synced
+            # assets in one query, instead of one query per asset in the loop.
+            asset_ids = [a.id for a in asset_by_symbol.values()]
+            existing_holdings = db.query(Holding).filter(
+                Holding.user_id == user_id,
+                Holding.asset_id.in_(asset_ids)
+            ).all()
+            holding_by_asset_id = {h.asset_id: h for h in existing_holdings}
+
             for asset_data in assets:
-                asset = get_or_create_asset(db, asset_data['asset'])
+                asset = asset_by_symbol[asset_data['asset']]
 
                 total_qty = Decimal(str(asset_data['total_amount']))
                 free_qty = Decimal(str(asset_data['free_amount']))
@@ -242,11 +263,7 @@ class AdvancedPortfolioSync:
                 price = Decimal(str(asset_data['price_usd'])) if asset_data['price_usd'] > 0 else None
                 value = Decimal(str(asset_data['value_usd'])) if asset_data['value_usd'] > 0 else None
 
-                # Check if a holding entry exists (keyed by asset FK)
-                existing = db.query(Holding).filter(
-                    Holding.user_id == user_id,
-                    Holding.asset_id == asset.id
-                ).first()
+                existing = holding_by_asset_id.get(asset.id)
 
                 if existing:
                     # Update market-facing fields; preserve cost basis, which a
@@ -304,10 +321,17 @@ async def sync_portfolio(
     """
     try:
         result = await portfolio_sync_service.sync_user_portfolio(current_user.id, db)
+        log_audit_event(db, current_user.id, "portfolio_sync",
+                         f"Portfolio sync for '{current_user.username}': {result.get('message', '')}",
+                         entity_type="user", entity_id=current_user.id,
+                         success=bool(result.get("success", False)),
+                         error_message=None if result.get("success") else str(result.get("message")))
         return result
-        
+
     except Exception as e:
         logger.error(f"Portfolio sync failed: {str(e)}")
+        log_audit_event(db, current_user.id, "portfolio_sync", f"Portfolio sync failed for '{current_user.username}'",
+                         entity_type="user", entity_id=current_user.id, success=False, error_message=str(e))
         raise DatabaseError(f"Portfolio sync failed: {str(e)}")
 
 @router.get("/portfolio/sync/status", response_model=Dict[str, Any])

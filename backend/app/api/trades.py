@@ -14,7 +14,7 @@ from pathlib import Path
 # Add database to path
 sys.path.append(str(Path(__file__).parent.parent))
 
-from database import SessionLocal, User, Asset, Trade, Transaction
+from database import SessionLocal, User, Asset, Trade
 from core.dependencies import get_db, get_current_active_user
 from core.errors import NotFoundError, ValidationError, DatabaseError
 from pydantic import BaseModel

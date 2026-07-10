@@ -13,7 +13,7 @@ sys.path.append(str(Path(__file__).parent / "app"))
 
 from database import (
     create_all_tables, drop_all_tables, get_database_info,
-    SessionLocal, User, Asset, CurrentPrice, Achievement
+    SessionLocal, User, Asset, CurrentPrice
 )
 from sqlalchemy import text
 import argparse
@@ -49,8 +49,7 @@ def show_info():
             tables_info = [
                 ("users", User),
                 ("assets", Asset),
-                ("current_prices", CurrentPrice),
-                ("achievements", Achievement)
+                ("current_prices", CurrentPrice)
             ]
             
             print("\n📋 Table Information:")

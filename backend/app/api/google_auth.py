@@ -15,6 +15,7 @@ from core.dependencies import get_db
 from database.models import User
 from core.auth import auth_manager
 from core.config import settings
+from core.audit import log_audit_event
 from sqlalchemy.orm import Session
 
 router = APIRouter(prefix="/api/auth", tags=["Google OAuth"])
@@ -36,6 +37,7 @@ class GoogleAuthResponse(BaseModel):
 @router.post("/google/login", response_model=GoogleAuthResponse)
 async def google_login(
     request: GoogleLoginRequest,
+    http_request: Request,
     db: Session = Depends(get_db)
 ):
     """
@@ -82,10 +84,15 @@ async def google_login(
                 existing_user.oauth_provider = "google"
                 
             db.commit()
-            
+
             # Generate token
             access_token = auth_manager.create_access_token({"sub": str(existing_user.id)})
-            
+
+            log_audit_event(db, existing_user.id, "login", f"User '{existing_user.username}' logged in via Google",
+                             entity_type="user", entity_id=existing_user.id,
+                             ip_address=http_request.client.host if http_request.client else "unknown",
+                             user_agent=http_request.headers.get("user-agent", "unknown"))
+
             return GoogleAuthResponse(
                 success=True,
                 message="Login successful",
@@ -130,9 +137,14 @@ async def google_login(
             db.add(new_user)
             db.commit()
             db.refresh(new_user)
-            
+
             access_token = auth_manager.create_access_token({"sub": str(new_user.id)})
-            
+
+            log_audit_event(db, new_user.id, "register", f"User '{new_user.username}' registered via Google",
+                             entity_type="user", entity_id=new_user.id,
+                             ip_address=http_request.client.host if http_request.client else "unknown",
+                             user_agent=http_request.headers.get("user-agent", "unknown"))
+
             return GoogleAuthResponse(
                 success=True,
                 message="Account created successfully",

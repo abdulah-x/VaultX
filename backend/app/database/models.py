@@ -1,4 +1,4 @@
-from sqlalchemy import Column, Integer, String, Float, DateTime, Boolean, Text, ForeignKey, DECIMAL, Date, JSON
+from sqlalchemy import Column, Integer, String, Float, DateTime, Boolean, Text, ForeignKey, DECIMAL, Date, Index
 from sqlalchemy.orm import relationship
 from sqlalchemy.sql import func
 from .connection import Base
@@ -47,7 +47,6 @@ class User(Base):
     # Relationships
     trades = relationship("Trade", back_populates="user", cascade="all, delete-orphan")
     holdings = relationship("Holding", back_populates="user", cascade="all, delete-orphan")
-    transactions = relationship("Transaction", back_populates="user", cascade="all, delete-orphan")
 
 class UserSession(Base):
     __tablename__ = "user_sessions"
@@ -131,10 +130,11 @@ class PriceHistory(Base):
 # Trading and Transactions
 class Trade(Base):
     __tablename__ = "trades"
-    
+    __table_args__ = (Index("ix_trades_user_executed", "user_id", "executed_at"),)
+
     id = Column(Integer, primary_key=True, index=True)
     user_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
-    
+
     # Binance trade identification
     binance_order_id = Column(String(100), nullable=False, index=True)
     binance_trade_id = Column(String(100))
@@ -179,43 +179,11 @@ class Trade(Base):
     base_asset = relationship("Asset", foreign_keys=[base_asset_id])
     quote_asset = relationship("Asset", foreign_keys=[quote_asset_id])
 
-class Transaction(Base):
-    __tablename__ = "transactions"
-    
-    id = Column(Integer, primary_key=True, index=True)
-    user_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
-    
-    # Transaction details
-    transaction_type = Column(String(50), nullable=False)  # 'DEPOSIT', 'WITHDRAWAL'
-    asset_id = Column(Integer, ForeignKey("assets.id"), nullable=False)
-    
-    # Amount and fees
-    amount = Column(DECIMAL(20, 8), nullable=False)
-    fee = Column(DECIMAL(20, 8), default=0)
-    
-    # Status and details
-    status = Column(String(20), default='COMPLETED')
-    transaction_hash = Column(String(100))
-    address = Column(String(100))
-    
-    # Timing
-    executed_at = Column(DateTime, nullable=False, index=True)
-    created_at = Column(DateTime, default=func.now())
-    
-    # Notes
-    notes = Column(Text)
-    
-    # Import tracking
-    import_source = Column(String(50), default='binance_api')
-    
-    # Relationships
-    user = relationship("User", back_populates="transactions")
-    asset = relationship("Asset")
-
 # Portfolio Holdings
 class Holding(Base):
     __tablename__ = "holdings"
-    
+    __table_args__ = (Index("ix_holdings_user_asset", "user_id", "asset_id"),)
+
     id = Column(Integer, primary_key=True, index=True)
     user_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
     asset_id = Column(Integer, ForeignKey("assets.id"), nullable=False, index=True)
@@ -253,33 +221,6 @@ class Holding(Base):
     user = relationship("User", back_populates="holdings")
     asset = relationship("Asset")
 
-class PortfolioSnapshot(Base):
-    __tablename__ = "portfolio_snapshots"
-    
-    id = Column(Integer, primary_key=True, index=True)
-    user_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
-    
-    # Snapshot timing
-    snapshot_date = Column(Date, nullable=False, index=True)
-    snapshot_type = Column(String(20), default='daily')
-    
-    # Portfolio totals
-    total_value_usd = Column(DECIMAL(20, 8), nullable=False)
-    total_cost_usd = Column(DECIMAL(20, 8), nullable=False)
-    total_pnl_usd = Column(DECIMAL(20, 8), nullable=False)
-    total_pnl_percentage = Column(DECIMAL(10, 4), nullable=False)
-    
-    # Portfolio composition (stored as JSON)
-    top_holdings = Column(JSON)
-    
-    # Asset counts
-    total_assets = Column(Integer, default=0)
-    
-    created_at = Column(DateTime, default=func.now())
-    
-    # Relationships
-    user = relationship("User")
-
 # Analytics and Performance
 class PerformanceMetric(Base):
     __tablename__ = "performance_metrics"
@@ -315,88 +256,7 @@ class PerformanceMetric(Base):
     # Relationships
     user = relationship("User")
 
-# Simple Gamification
-class Achievement(Base):
-    __tablename__ = "achievements"
-    
-    id = Column(Integer, primary_key=True, index=True)
-    
-    # Achievement details
-    achievement_code = Column(String(50), unique=True, nullable=False)
-    name = Column(String(100), nullable=False)
-    description = Column(Text, nullable=False)
-    category = Column(String(50), nullable=False)
-    
-    # Requirements
-    requirement_type = Column(String(50), nullable=False)
-    requirement_value = Column(Integer, nullable=False)
-    
-    # Reward
-    points_reward = Column(Integer, default=0)
-    badge_icon = Column(Text)
-    
-    # Status
-    is_active = Column(Boolean, default=True)
-    
-    created_at = Column(DateTime, default=func.now())
-    
-    # Relationships
-    user_achievements = relationship("UserAchievement", back_populates="achievement")
-
-class UserAchievement(Base):
-    __tablename__ = "user_achievements"
-    
-    id = Column(Integer, primary_key=True, index=True)
-    user_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
-    achievement_id = Column(Integer, ForeignKey("achievements.id", ondelete="CASCADE"), nullable=False)
-    
-    # Progress tracking
-    current_progress = Column(Integer, default=0)
-    is_completed = Column(Boolean, default=False)
-    completed_at = Column(DateTime)
-    points_earned = Column(Integer, default=0)
-    
-    created_at = Column(DateTime, default=func.now())
-    updated_at = Column(DateTime, default=func.now(), onupdate=func.now())
-    
-    # Relationships
-    user = relationship("User")
-    achievement = relationship("Achievement", back_populates="user_achievements")
-
-class UserStreak(Base):
-    __tablename__ = "user_streaks"
-    
-    id = Column(Integer, primary_key=True, index=True)
-    user_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
-    
-    # Streak types
-    streak_type = Column(String(50), nullable=False)
-    
-    # Streak data
-    current_streak = Column(Integer, default=0)
-    longest_streak = Column(Integer, default=0)
-    last_activity_date = Column(Date)
-    
-    # Status
-    is_active = Column(Boolean, default=True)
-    
-    created_at = Column(DateTime, default=func.now())
-    updated_at = Column(DateTime, default=func.now(), onupdate=func.now())
-    
-    # Relationships
-    user = relationship("User")
-
 # System and Audit
-class SystemSetting(Base):
-    __tablename__ = "system_settings"
-    
-    id = Column(Integer, primary_key=True, index=True)
-    setting_key = Column(String(100), unique=True, nullable=False)
-    setting_value = Column(Text, nullable=False)
-    setting_type = Column(String(20), default='STRING')
-    description = Column(Text)
-    updated_at = Column(DateTime, default=func.now(), onupdate=func.now())
-
 class AuditLog(Base):
     __tablename__ = "audit_logs"
     
@@ -420,33 +280,6 @@ class AuditLog(Base):
     error_message = Column(Text)
     
     created_at = Column(DateTime, default=func.now())
-    
-    # Relationships
-    user = relationship("User")
-
-class SyncHistory(Base):
-    __tablename__ = "sync_history"
-    
-    id = Column(Integer, primary_key=True, index=True)
-    user_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
-    
-    # Sync details
-    sync_type = Column(String(50), nullable=False)
-    sync_status = Column(String(20), nullable=False)
-    
-    # Results
-    trades_synced = Column(Integer, default=0)
-    transactions_synced = Column(Integer, default=0)
-    holdings_updated = Column(Integer, default=0)
-    
-    # Timing
-    started_at = Column(DateTime, default=func.now())
-    completed_at = Column(DateTime)
-    duration_seconds = Column(Integer)
-    
-    # Error handling
-    error_message = Column(Text)
-    error_details = Column(JSON)
     
     # Relationships
     user = relationship("User")
