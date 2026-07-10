@@ -2,9 +2,19 @@ FROM python:3.11-slim
 
 WORKDIR /app
 
-# Install system dependencies
-RUN apt-get update && apt-get install -y \
-    gcc curl \
+# Install system dependencies. postgresql-client-15 provides pg_dump/pg_restore,
+# used by services/backup_service.py for the DB backup/restore admin routes.
+# Pinned to major version 15 to exactly match the postgres:15-alpine server in
+# docker-compose.yml - Debian's default postgresql-client package pulls a
+# newer major version whose client emits session-setup commands (e.g.
+# transaction_timeout, added in PG17) the PG15 server rejects, which makes
+# pg_restore exit non-zero even on an otherwise-successful restore.
+RUN apt-get update && apt-get install -y gcc curl gnupg lsb-release \
+    && curl -fsSL https://www.postgresql.org/media/keys/ACCC4CF8.asc | gpg --dearmor -o /usr/share/keyrings/postgresql.gpg \
+    && echo "deb [signed-by=/usr/share/keyrings/postgresql.gpg] http://apt.postgresql.org/pub/repos/apt $(lsb_release -cs)-pgdg main" > /etc/apt/sources.list.d/pgdg.list \
+    && apt-get update && apt-get install -y postgresql-client-15 \
+    && apt-get purge -y gnupg lsb-release \
+    && apt-get autoremove -y \
     && rm -rf /var/lib/apt/lists/*
 
 # Copy requirements first for better caching

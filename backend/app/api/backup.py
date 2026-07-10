@@ -101,11 +101,19 @@ async def restore_backup(
     ⚠️ WARNING: This will replace the current database!
     A pre-restore backup will be created automatically.
     """
+    admin_id, admin_username = current_user.id, current_user.username
     try:
+        # pg_restore issues DDL (DROP CONSTRAINT, etc.) that needs an exclusive
+        # lock on tables this same request's own auth session has already
+        # queried (e.g. users, via require_admin). Commit here to release that
+        # implicit transaction/lock before the blocking subprocess runs -
+        # otherwise pg_restore deadlocks against this request's own connection.
+        db.commit()
+
         result = backup_service.restore_backup(request.backup_file)
 
-        log_audit_event(db, current_user.id, "backup_restore",
-                         f"Database restored from '{request.backup_file}' by '{current_user.username}'",
+        log_audit_event(db, admin_id, "backup_restore",
+                         f"Database restored from '{request.backup_file}' by '{admin_username}'",
                          entity_type="backup", success=True)
 
         return BackupResponse(
@@ -114,12 +122,12 @@ async def restore_backup(
             data=result
         )
     except FileNotFoundError as e:
-        log_audit_event(db, current_user.id, "backup_restore",
-                         f"Restore failed for '{current_user.username}': file not found",
+        log_audit_event(db, admin_id, "backup_restore",
+                         f"Restore failed for '{admin_username}': file not found",
                          entity_type="backup", success=False, error_message=str(e))
         raise HTTPException(status_code=404, detail=str(e))
     except Exception as e:
-        log_audit_event(db, current_user.id, "backup_restore", f"Restore failed for '{current_user.username}'",
+        log_audit_event(db, admin_id, "backup_restore", f"Restore failed for '{admin_username}'",
                          entity_type="backup", success=False, error_message=str(e))
         raise HTTPException(status_code=500, detail=f"Restore failed: {str(e)}")
 
