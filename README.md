@@ -62,8 +62,8 @@ crypto-portfolio-app/
 ### Using Docker Compose (Recommended)
 ```bash
 # Clone repository
-git clone https://github.com/abdulah-x/crypto-portfolio-app.git
-cd crypto-portfolio-app
+git clone https://github.com/abdulah-x/VaultX.git
+cd VaultX
 
 # Configure environment
 cp backend/.env.example backend/.env
