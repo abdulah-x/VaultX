@@ -7,6 +7,7 @@ Full-stack cryptocurrency portfolio management platform with real-time tracking,
 - **Portfolio Tracking**: Real-time multi-asset portfolio monitoring with live P&L calculations
 - **Security**: JWT authentication with token management and secure password hashing
 - **Binance Integration**: Testnet support for safe portfolio synchronization
+- **Real-Time Price Pipeline**: Live Binance WebSocket ticks buffered through Redis Streams into a TimescaleDB hypertable, streamed to clients over `/api/prices/stream`
 - **Analytics**: Advanced P&L analysis with multiple calculation methods (FIFO, portfolio-based)
 - **AI Portfolio Advisor**: Natural-language Q&A over your own holdings/trades/P&L, grounded in real portfolio data (Gemini + LangChain)
 - **Modern UI**: Responsive Next.js dashboard with dark theme and real-time charts
