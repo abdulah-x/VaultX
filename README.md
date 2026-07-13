@@ -115,6 +115,9 @@ SMTP_PASSWORD=your-app-password
 # Optional: Binance Testnet
 BINANCE_API_KEY=your-testnet-key
 BINANCE_SECRET_KEY=your-testnet-secret
+
+# LLM Portfolio Advisor (free tier: https://aistudio.google.com/apikey)
+GEMINI_API_KEY=your-gemini-key
 ```
 
 ## 🔑 Key Endpoints
