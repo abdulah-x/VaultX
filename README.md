@@ -100,7 +100,7 @@ npm run dev
 Create `backend/.env`:
 ```env
 # Database
-DATABASE_URL=postgresql://postgres:postgres@localhost:5433/vaultx
+DATABASE_URL=postgresql://crypto_user:crypto_password@localhost:5433/crypto_portfolio
 
 # JWT
 SECRET_KEY=your-secret-key-change-this
