@@ -72,8 +72,8 @@ cp backend/.env.example backend/.env
 # Start all services
 docker-compose up -d
 
-# Initialize database
-docker exec VaultX-backend python manage_db.py
+# Initialize database (applies Alembic migrations)
+docker exec VaultX-Backend alembic upgrade head
 ```
 
 **Access**:
