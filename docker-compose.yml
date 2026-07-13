@@ -3,7 +3,7 @@ name: VaultX
 services:
   # 1. Database (Starts First)
   postgres:
-    image: postgres:15-alpine
+    image: timescale/timescaledb:2.17.2-pg15
     container_name: VaultX-Database
     environment:
       POSTGRES_DB: crypto_portfolio
@@ -78,6 +78,36 @@ services:
       timeout: 5s
       retries: 5
       start_period: 10s
+
+  # 2b. Stream writer (Redis Streams -> TimescaleDB price ingestion)
+  stream-writer:
+    build: ./backend
+    container_name: VaultX-StreamWriter
+    # cwd stays /app (matching the backend service) so the mounted backend/.env
+    # (at /app/.env) resolves via pydantic-settings' relative env_file path;
+    # PYTHONPATH adds /app/app so `data_pipeline`/`core`/`database` resolve as
+    # bare imports the same way main.py's sys.path.append does for the API.
+    command: ["python", "-m", "data_pipeline.stream_writer"]
+    environment:
+      - DEBUG=true
+      - PYTHONPATH=/app/app
+      - DATABASE_URL=postgresql://crypto_user:crypto_password@postgres:5432/crypto_portfolio
+      - REDIS_URL=redis://:${REDIS_PASSWORD:-changeme_dev_redis_password}@redis:6379/0
+      # BINANCE_API_KEY/SECRET/TESTNET deliberately NOT listed here — docker-compose
+      # substitutes those from the ROOT .env, which doesn't carry them (only
+      # backend/.env does; same gotcha documented for GEMINI_API_KEY). Omitting
+      # them lets pydantic-settings read the real values straight from the
+      # mounted backend/.env instead of an empty override shadowing it.
+    volumes:
+      - ./backend:/app
+    networks:
+      - vaultx_network
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    restart: unless-stopped
 
   # 3. Frontend (Starts Last, depends on Backend)
   frontend:

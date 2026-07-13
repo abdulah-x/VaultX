@@ -1,4 +1,4 @@
-from sqlalchemy import Column, Integer, String, Float, DateTime, Boolean, Text, ForeignKey, DECIMAL, Date, Index
+from sqlalchemy import Column, Integer, String, Float, DateTime, Boolean, Text, ForeignKey, DECIMAL, Date, Index, PrimaryKeyConstraint
 from sqlalchemy.orm import relationship
 from sqlalchemy.sql import func
 from .connection import Base
@@ -110,20 +110,25 @@ class CurrentPrice(Base):
 
 class PriceHistory(Base):
     __tablename__ = "price_history"
-    
-    id = Column(Integer, primary_key=True, index=True)
+    # TimescaleDB requires the hypertable partitioning column (`timestamp`) to be
+    # part of any primary key, hence the composite key instead of a plain `id` PK.
+    __table_args__ = (
+        PrimaryKeyConstraint("id", "timestamp"),
+        Index("ix_price_history_asset_timestamp", "asset_id", "timestamp"),
+    )
+
+    id = Column(Integer, autoincrement=True, nullable=False)
     asset_id = Column(Integer, ForeignKey("assets.id", ondelete="CASCADE"), nullable=False, index=True)
-    
+
     # Price and volume
     price_usd = Column(DECIMAL(20, 8), nullable=False)
     volume_24h = Column(Integer)
-    
-    # Snapshot timing
-    snapshot_date = Column(Date, nullable=False, index=True)
-    snapshot_type = Column(String(20), default='daily')
-    
+
+    # Event time — the hypertable partitioning column
+    timestamp = Column(DateTime(timezone=True), nullable=False)
+
     created_at = Column(DateTime, default=func.now())
-    
+
     # Relationship
     asset = relationship("Asset", back_populates="price_history")
 

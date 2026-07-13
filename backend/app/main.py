@@ -5,6 +5,7 @@ from fastapi.exceptions import RequestValidationError
 from sqlalchemy.exc import SQLAlchemyError
 from binance.exceptions import BinanceAPIException
 from datetime import datetime
+import asyncio
 import uvicorn
 import sys
 import os
@@ -172,6 +173,20 @@ if GOOGLE_AUTH_AVAILABLE:
 # static advanced routes above.
 app.include_router(trades_router, prefix="/api", tags=["Trades"])
 app.include_router(pnl_router, prefix="/api", tags=["P&L"])
+
+# Start the live price ingestion pipeline (Phase 6) alongside the API. This
+# replaces the old REST-polling simulation in realtime_prices.py — real
+# Binance WS ticks now flow to Redis Streams -> the stream-writer service ->
+# price_history/CurrentPrice.
+@app.on_event("startup")
+async def start_background_tasks():
+    if REALTIME_PRICES_AVAILABLE:
+        try:
+            from data_pipeline.live_stream import stream_binance_ticks
+            asyncio.create_task(stream_binance_ticks())
+            print("✅ Live price ingestion task started")
+        except Exception as e:
+            print(f"⚠️ Live price ingestion failed to start: {e}")
 
 # Health check endpoint
 @app.get("/health")
