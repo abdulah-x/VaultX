@@ -46,7 +46,7 @@ crypto-portfolio-app/
 - **Styling**: TailwindCSS with modern design system
 - **Fonts**: Inter & JetBrains Mono (Google Fonts)
 - **Backend**: FastAPI (Python 3.11+)
-- **Database**: SQLite with SQLAlchemy ORM
+- **Database**: PostgreSQL (TimescaleDB) with SQLAlchemy ORM + Alembic migrations
 
 - **Backend API Docs**: http://127.0.0.1:8000/docs
 - **ReDoc**: http://127.0.0.1:8000/redoc
