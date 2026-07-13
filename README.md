@@ -55,7 +55,9 @@ crypto-portfolio-app/
 
 ### **✨ Modern Design System**
 - **Professional Typography**: Inter & JetBrains Mono fonts with display swap optimization
-- **ReQuick Start
+- **Responsive Design**: Optimized layouts for desktop and mobile
+
+## 🚀 Quick Start
 
 ### Using Docker Compose (Recommended)
 ```bash
