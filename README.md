@@ -47,12 +47,7 @@ crypto-portfolio-app/
 - **Fonts**: Inter & JetBrains Mono (Google Fonts)
 - **Backend**: FastAPI (Python 3.11+)
 - **Database**: SQLite with SQLAlchemy ORM
-- *🏗️ Tech Stack
 
-**Frontend**: Next.js 15.5.4 • TypeScript • TailwindCSS • Recharts  
-**Backend**: FastAPI • Python 3.11 • SQLAlchemy • PostgreSQL  
-**Auth**: JWT • bcrypt  
-**APIs**: Binance Testnet • Email (Gmail SMTP)
 - **Backend API Docs**: http://127.0.0.1:8000/docs
 - **ReDoc**: http://127.0.0.1:8000/redoc
 
