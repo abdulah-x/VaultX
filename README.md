@@ -8,6 +8,7 @@ Full-stack cryptocurrency portfolio management platform with real-time tracking,
 - **Security**: JWT authentication with token management and secure password hashing
 - **Binance Integration**: Testnet support for safe portfolio synchronization
 - **Analytics**: Advanced P&L analysis with multiple calculation methods (FIFO, portfolio-based)
+- **AI Portfolio Advisor**: Natural-language Q&A over your own holdings/trades/P&L, grounded in real portfolio data (Gemini + LangChain)
 - **Modern UI**: Responsive Next.js dashboard with dark theme and real-time charts
 - **API**: 50+ REST endpoints with complete OpenAPI documentation
 
