@@ -120,6 +120,20 @@ except ImportError as e:
     print(f"⚠️ Portfolio Advisor routes import failed: {e}")
     ADVISOR_AVAILABLE = False
 
+try:
+    from api.market_data import router as market_data_router
+    MARKET_DATA_AVAILABLE = True
+except ImportError as e:
+    print(f"⚠️ Market Data routes import failed: {e}")
+    MARKET_DATA_AVAILABLE = False
+
+try:
+    from api.orders import router as orders_router
+    ORDERS_AVAILABLE = True
+except ImportError as e:
+    print(f"⚠️ Orders routes import failed: {e}")
+    ORDERS_AVAILABLE = False
+
 # Include API routes.
 #
 # IMPORTANT ordering rule: the trades and pnl routers contain greedy catch-all
@@ -160,6 +174,14 @@ if ADVANCED_PNL_AVAILABLE:
 if ADVISOR_AVAILABLE:
     app.include_router(advisor_router, prefix="/api", tags=["Advisor"])
     print("✅ Portfolio Advisor routes registered")
+
+if MARKET_DATA_AVAILABLE:
+    app.include_router(market_data_router, prefix="/api", tags=["Market Data"])
+    print("✅ Market Data routes registered")
+
+if ORDERS_AVAILABLE:
+    app.include_router(orders_router, prefix="/api", tags=["Orders"])
+    print("✅ Orders routes registered")
 
 if BACKUP_AVAILABLE:
     app.include_router(backup_router, tags=["Backup & Restore"])
@@ -244,6 +266,14 @@ async def health_check():
         "advanced_pnl": {
             "available": ADVANCED_PNL_AVAILABLE,
             "status": "healthy" if ADVANCED_PNL_AVAILABLE else "unavailable"
+        },
+        "market_data": {
+            "available": MARKET_DATA_AVAILABLE,
+            "status": "healthy" if MARKET_DATA_AVAILABLE else "unavailable"
+        },
+        "orders": {
+            "available": ORDERS_AVAILABLE,
+            "status": "healthy" if ORDERS_AVAILABLE else "unavailable"
         }
     }
     
