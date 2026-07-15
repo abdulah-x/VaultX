@@ -94,7 +94,7 @@ docker exec VaultX-Backend alembic upgrade head
 cd backend
 pip install -r requirements.txt
 cp .env.example .env
-python manage_db.py
+alembic upgrade head
 uvicorn app.main:app --host 0.0.0.0 --port 8001
 
 # Frontend (new terminal)
