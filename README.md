@@ -56,8 +56,8 @@ VaultX/
 - **Backend**: FastAPI (Python 3.11+)
 - **Database**: PostgreSQL (TimescaleDB) with SQLAlchemy ORM + Alembic migrations
 
-- **Backend API Docs**: http://127.0.0.1:8000/docs
-- **ReDoc**: http://127.0.0.1:8000/redoc
+- **Backend API Docs**: http://localhost:8001/docs (via Docker Compose; the backend's internal port is 8000)
+- **ReDoc**: http://localhost:8001/redoc
 
 ## 🎨 **Frontend Features**
 
