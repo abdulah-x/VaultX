@@ -55,6 +55,7 @@ VaultX/
 - **Fonts**: Inter & JetBrains Mono (Google Fonts)
 - **Backend**: FastAPI (Python 3.11+)
 - **Database**: PostgreSQL (TimescaleDB) with SQLAlchemy ORM + Alembic migrations
+- **Cache / Streaming**: Redis (token blacklist, OTP storage, Redis Streams for price ingestion)
 
 - **Backend API Docs**: http://localhost:8001/docs (via Docker Compose; the backend's internal port is 8000)
 - **ReDoc**: http://localhost:8001/redoc
