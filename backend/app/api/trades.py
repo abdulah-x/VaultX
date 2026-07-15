@@ -14,6 +14,7 @@ from pathlib import Path
 # Add database to path
 sys.path.append(str(Path(__file__).parent.parent))
 
+from sqlalchemy.orm import aliased
 from database import SessionLocal, User, Asset, Trade
 from core.dependencies import get_db, get_current_active_user
 from core.errors import NotFoundError, ValidationError, DatabaseError
@@ -72,9 +73,11 @@ async def get_trade_history(
     """
     try:
         # Build query with joins to get asset symbols
+        QuoteAsset = aliased(Asset)
         query = (
-            db.query(Trade, Asset.symbol.label('base_symbol'), Asset.symbol.label('quote_symbol'))
+            db.query(Trade, Asset.symbol.label('base_symbol'), QuoteAsset.symbol.label('quote_symbol'))
             .join(Asset, Trade.base_asset_id == Asset.id)
+            .join(QuoteAsset, Trade.quote_asset_id == QuoteAsset.id)
             .filter(Trade.user_id == current_user.id)
         )
         
