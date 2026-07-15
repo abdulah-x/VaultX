@@ -24,6 +24,10 @@ VaultX/
 │   │   │   ├── page.tsx       # Landing page with portfolio showcase
 │   │   │   ├── login/         # Login page with validation
 │   │   │   ├── signup/        # Signup page with advanced validation
+│   │   │   ├── dashboard/     # Portfolio dashboard
+│   │   │   ├── portfolio/     # Holdings & portfolio detail views
+│   │   │   ├── analytics/     # P&L / analytics views
+│   │   │   ├── trades/        # Trade history
 │   │   │   └── globals.css    # Global styles and TailwindCSS
 │   │   └── components/        # Reusable React components
 │   ├── tailwind.config.ts     # TailwindCSS configuration
