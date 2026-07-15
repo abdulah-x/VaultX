@@ -16,7 +16,7 @@ Full-stack cryptocurrency portfolio management platform with real-time tracking,
 ## 📁 **Project Structure**
 
 ```
-crypto-portfolio-app/
+VaultX/
 ├── frontend/                   # Next.js Frontend Application
 │   ├── src/
 │   │   ├── app/
