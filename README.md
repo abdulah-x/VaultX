@@ -33,8 +33,9 @@ VaultX/
 │   ├── app/
 │   │   ├── api/              # API routes
 │   │   ├── core/             # Authentication & security
-│   │   ├── database/         # Models & migrations
+│   │   ├── database/         # SQLAlchemy models
 │   │   └── services/         # Business logic
+│   ├── alembic/               # DB migrations
 │   ├── requirements.txt      # Python dependencies
 │   └── app/main.py           # FastAPI application
 ├── docker-compose.yml        # Development environment
