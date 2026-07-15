@@ -15,14 +15,15 @@ import re
 from core.dependencies import get_db, get_current_active_user, get_current_user
 from core.auth import auth_manager
 from core.errors import (
-    AuthenticationError, 
-    ValidationError, 
+    AuthenticationError,
+    ValidationError,
     NotFoundError,
     DatabaseError
 )
 from database.models import User, UserSession
 from core.redis_client import redis_client
 from core.audit import log_audit_event
+from core.validators import validate_password_strength
 
 router = APIRouter()
 
@@ -54,10 +55,7 @@ class UserRegistration(BaseModel):
     
     @validator('password')
     def validate_password(cls, v):
-        if len(v) < 6:
-            raise ValueError('Password must be at least 6 characters long')
-        # Simplified password requirements for development
-        return v
+        return validate_password_strength(v)
 
 class UserLogin(BaseModel):
     username: str  # Can be username or email
@@ -94,15 +92,7 @@ class PasswordChange(BaseModel):
     
     @validator('new_password')
     def validate_new_password(cls, v):
-        if len(v) < 8:
-            raise ValueError('Password must be at least 8 characters long')
-        if not re.search(r'[A-Z]', v):
-            raise ValueError('Password must contain at least one uppercase letter')
-        if not re.search(r'[a-z]', v):
-            raise ValueError('Password must contain at least one lowercase letter')
-        if not re.search(r'\d', v):
-            raise ValueError('Password must contain at least one digit')
-        return v
+        return validate_password_strength(v)
 
 @router.post("/auth/register", response_model=TokenResponse, status_code=status.HTTP_201_CREATED)
 async def register_user(
