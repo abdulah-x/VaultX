@@ -34,7 +34,8 @@ VaultX/
 │   │   ├── api/              # API routes
 │   │   ├── core/             # Authentication & security
 │   │   ├── database/         # SQLAlchemy models
-│   │   └── services/         # Business logic
+│   │   ├── services/         # Business logic
+│   │   └── data_pipeline/    # Binance WS -> Redis Streams -> TimescaleDB ingestion
 │   ├── alembic/               # DB migrations
 │   ├── requirements.txt      # Python dependencies
 │   └── app/main.py           # FastAPI application
