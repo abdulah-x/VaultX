@@ -36,7 +36,7 @@ VaultX/
 │   │   ├── database/         # Models & migrations
 │   │   └── services/         # Business logic
 │   ├── requirements.txt      # Python dependencies
-│   └── main.py              # FastAPI application
+│   └── app/main.py           # FastAPI application
 ├── docker-compose.yml        # Development environment
 └── README.md                # This file
 ```
