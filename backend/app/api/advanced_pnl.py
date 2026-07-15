@@ -301,31 +301,27 @@ class AdvancedPnLCalculator:
         }
     
     async def _calculate_time_series_pnl(self, trades: List[Trade], current_prices: Dict[str, float], days: int) -> Dict[str, Any]:
-        """Calculate P&L over time for visualization"""
+        """Calculate realized P&L over time for visualization, from actual trade.realized_pnl_usd"""
         if not trades:
             return {"daily_pnl": {}, "cumulative_pnl": {}}
-        
+
         # Group trades by date
         daily_trades = defaultdict(list)
         for trade in trades:
+            if trade.realized_pnl_usd is None:
+                continue
             date_key = trade.executed_at.strftime('%Y-%m-%d')
             daily_trades[date_key].append(trade)
-        
+
         daily_pnl = {}
         cumulative_pnl = 0
-        
-        # Calculate daily P&L (simplified)
+
+        # Calculate daily realized P&L from actual recorded values, not an assumption
         for date, date_trades in sorted(daily_trades.items()):
-            daily_realized = 0
-            
-            for trade in date_trades:
-                if trade.side == "SELL":
-                    # Simplified: assume profit on sells
-                    daily_realized += float(trade.quote_quantity) * 0.01  # 1% assumed profit
-            
+            daily_realized = sum(float(trade.realized_pnl_usd) for trade in date_trades)
             daily_pnl[date] = daily_realized
             cumulative_pnl += daily_realized
-        
+
         return {
             "daily_pnl": daily_pnl,
             "cumulative_pnl": cumulative_pnl,
