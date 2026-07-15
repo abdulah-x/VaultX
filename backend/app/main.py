@@ -208,14 +208,21 @@ async def health_check():
         db_status = "unhealthy"
         db_error = str(e)
     
-    # Check Binance connectivity (if available)
+    # Check Binance API key configuration (if available). This intentionally does
+    # NOT make a live Binance API call: /health is polled every 10s by Docker's
+    # healthcheck, and a real connect()+get_account() round trip here would hammer
+    # Binance continuously and block the event loop. Use /api/binance/test-connection
+    # for an actual live connectivity check.
     binance_status = "not_configured"
     binance_error = None
     try:
         from services.binance.client import BinanceClientManager
         client = BinanceClientManager()
-        # Test connection (this is lightweight)
-        binance_status = "healthy" if client.client else "unhealthy"
+        has_valid_key = bool(
+            client.api_key and client.secret_key
+            and client.api_key != "your_testnet_api_key_here"
+        )
+        binance_status = "healthy" if has_valid_key else "not_configured"
     except Exception as e:
         binance_status = "unhealthy"
         binance_error = str(e)
