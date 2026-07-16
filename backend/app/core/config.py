@@ -8,7 +8,7 @@ DEFAULT_INSECURE_SECRET = "your-super-secret-key-change-this-in-production"
 
 class Settings(BaseSettings):
     # App Configuration
-    app_name: str = "Crypto Portfolio API"
+    app_name: str = "VaultX API"
     version: str = "1.0.0"
     debug: bool = True
     
