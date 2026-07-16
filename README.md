@@ -136,6 +136,11 @@ GEMINI_API_KEY=your-gemini-key
 - `GET /api/portfolio/summary` - Portfolio overview with P&L
 - `GET /api/portfolio/holdings` - Detailed holdings breakdown
 - `POST /api/binance/sync` - Sync portfolio from Binance
+- `GET /api/market/klines/{symbol}` - Candlestick/kline data at any interval
+- `GET /api/market/ticker/{symbol}` - 24hr price change stats
+- `GET /api/market/orderbook/{symbol}` - Live order book depth
+- `POST /api/orders` - Place a real order on the configured Binance account
+- `GET /api/orders/open` - Currently open (unfilled) orders
 - `POST /api/advisor/chat` - Ask the AI advisor a question about your own portfolio
 - `WS /api/prices/stream` - Live price updates for your portfolio's assets
 - Full API docs at `/docs`
