@@ -366,10 +366,24 @@ async def api_info():
     if ADVANCED_PNL_AVAILABLE:
         advanced_endpoints["advanced_pnl"] = {
             "comprehensive": "/api/pnl/comprehensive",
-            "summary": "/api/pnl/summary", 
+            "summary": "/api/pnl/summary",
             "performance": "/api/pnl/performance"
         }
-    
+
+    if MARKET_DATA_AVAILABLE:
+        advanced_endpoints["market_data"] = {
+            "orderbook": "/api/market/orderbook/{symbol}",
+            "klines": "/api/market/klines/{symbol}",
+            "ticker": "/api/market/ticker/{symbol}"
+        }
+
+    if ORDERS_AVAILABLE:
+        advanced_endpoints["orders"] = {
+            "place": "/api/orders",
+            "open": "/api/orders/open",
+            "history": "/api/orders/history"
+        }
+
     return {
         "app_name": settings.app_name,
         "version": settings.version,
