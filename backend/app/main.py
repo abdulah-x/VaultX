@@ -370,6 +370,11 @@ async def api_info():
             "performance": "/api/pnl/performance"
         }
 
+    if ADVISOR_AVAILABLE:
+        advanced_endpoints["advisor"] = {
+            "chat": "/api/advisor/chat"
+        }
+
     if MARKET_DATA_AVAILABLE:
         advanced_endpoints["market_data"] = {
             "orderbook": "/api/market/orderbook/{symbol}",
