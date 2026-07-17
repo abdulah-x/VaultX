@@ -286,6 +286,14 @@ async def health_check():
         "google_auth": {
             "available": GOOGLE_AUTH_AVAILABLE,
             "status": "healthy" if GOOGLE_AUTH_AVAILABLE else "unavailable"
+        },
+        "password_reset": {
+            "available": PASSWORD_RESET_AVAILABLE,
+            "status": "healthy" if PASSWORD_RESET_AVAILABLE else "unavailable"
+        },
+        "email_verification": {
+            "available": EMAIL_VERIFICATION_AVAILABLE,
+            "status": "healthy" if EMAIL_VERIFICATION_AVAILABLE else "unavailable"
         }
     }
     
