@@ -278,6 +278,10 @@ async def health_check():
         "orders": {
             "available": ORDERS_AVAILABLE,
             "status": "healthy" if ORDERS_AVAILABLE else "unavailable"
+        },
+        "backup": {
+            "available": BACKUP_AVAILABLE,
+            "status": "healthy" if BACKUP_AVAILABLE else "unavailable"
         }
     }
     
