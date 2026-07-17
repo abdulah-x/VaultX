@@ -267,6 +267,10 @@ async def health_check():
             "available": ADVANCED_PNL_AVAILABLE,
             "status": "healthy" if ADVANCED_PNL_AVAILABLE else "unavailable"
         },
+        "advisor": {
+            "available": ADVISOR_AVAILABLE,
+            "status": "healthy" if ADVISOR_AVAILABLE else "unavailable"
+        },
         "market_data": {
             "available": MARKET_DATA_AVAILABLE,
             "status": "healthy" if MARKET_DATA_AVAILABLE else "unavailable"
