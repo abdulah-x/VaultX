@@ -282,6 +282,10 @@ async def health_check():
         "backup": {
             "available": BACKUP_AVAILABLE,
             "status": "healthy" if BACKUP_AVAILABLE else "unavailable"
+        },
+        "google_auth": {
+            "available": GOOGLE_AUTH_AVAILABLE,
+            "status": "healthy" if GOOGLE_AUTH_AVAILABLE else "unavailable"
         }
     }
     
