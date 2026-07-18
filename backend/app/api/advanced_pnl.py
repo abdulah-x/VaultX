@@ -232,11 +232,12 @@ class AdvancedPnLCalculator:
                         sell_quantity = min(quantity, position)
                         realized_pnl += sell_quantity * (price - avg_cost)
                         position -= sell_quantity
-                        total_sold += quantity * price
-                        
-                        # If selling more than current position, average down
-                        if quantity > position + sell_quantity and position > 0:
-                            avg_cost = price
+                        # Value the sale by the quantity actually matched against
+                        # the position (sell_quantity), not the raw order quantity.
+                        # Using `quantity` overcounts total_sold whenever an order
+                        # sells more than the held position, so it no longer ties
+                        # out with realized_pnl (which only counts sell_quantity).
+                        total_sold += sell_quantity * price
             
             # Calculate unrealized P&L for remaining position
             current_price = current_prices.get(symbol.replace('USDT', '').replace('BUSD', ''), 0)
