@@ -134,6 +134,13 @@ except ImportError as e:
     print(f"⚠️ Orders routes import failed: {e}")
     ORDERS_AVAILABLE = False
 
+try:
+    from api.portfolio_analytics import router as portfolio_analytics_router
+    PORTFOLIO_ANALYTICS_AVAILABLE = True
+except ImportError as e:
+    print(f"⚠️ Portfolio Analytics routes import failed: {e}")
+    PORTFOLIO_ANALYTICS_AVAILABLE = False
+
 # Include API routes.
 #
 # IMPORTANT ordering rule: the trades and pnl routers contain greedy catch-all
@@ -182,6 +189,10 @@ if MARKET_DATA_AVAILABLE:
 if ORDERS_AVAILABLE:
     app.include_router(orders_router, prefix="/api", tags=["Orders"])
     print("✅ Orders routes registered")
+
+if PORTFOLIO_ANALYTICS_AVAILABLE:
+    app.include_router(portfolio_analytics_router, prefix="/api", tags=["Portfolio Analytics"])
+    print("✅ Portfolio Analytics routes registered")
 
 if BACKUP_AVAILABLE:
     app.include_router(backup_router, tags=["Backup & Restore"])
@@ -278,6 +289,10 @@ async def health_check():
         "orders": {
             "available": ORDERS_AVAILABLE,
             "status": "healthy" if ORDERS_AVAILABLE else "unavailable"
+        },
+        "portfolio_analytics": {
+            "available": PORTFOLIO_ANALYTICS_AVAILABLE,
+            "status": "healthy" if PORTFOLIO_ANALYTICS_AVAILABLE else "unavailable"
         },
         "backup": {
             "available": BACKUP_AVAILABLE,
@@ -407,6 +422,11 @@ async def api_info():
             "place": "/api/orders",
             "open": "/api/orders/open",
             "history": "/api/orders/history"
+        }
+
+    if PORTFOLIO_ANALYTICS_AVAILABLE:
+        advanced_endpoints["portfolio_analytics"] = {
+            "optimize": "/api/portfolio/optimize"
         }
 
     return {

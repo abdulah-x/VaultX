@@ -13,6 +13,7 @@ from sqlalchemy import func
 from sqlalchemy.orm import Session
 
 from database import Asset, CurrentPrice, Holding, Trade
+from services.analytics import mpt
 
 RECENT_TRADES_LIMIT = 20
 
@@ -90,6 +91,38 @@ def build_portfolio_context(db: Session, user_id: int) -> tuple[str, List[str]]:
         f"Portfolio total: value=${_fmt(total_value)}, cost_basis=${_fmt(total_cost)}, "
         f"unrealized_pnl=${_fmt(total_unrealized)}"
     )
+
+    # Risk metrics (Phase 7): volatility per asset + a portfolio-level Sharpe
+    # ratio, computed from real price history. If we don't have enough distinct
+    # trading days yet, say so plainly rather than inventing numbers — same
+    # "be honest about missing data" pattern as the zero-holdings case above.
+    lines.append("\nRisk metrics:")
+    returns_df = mpt.get_daily_returns(db, asset_ids)
+    if len(returns_df) < mpt.MIN_TRADING_DAYS:
+        lines.append(
+            "- Not enough price history yet to compute volatility/Sharpe "
+            "(need at least a couple of distinct trading days)."
+        )
+    else:
+        if total_value > 0:
+            current_weights = {}
+            for holding, symbol, current_price in holdings_rows:
+                qty = holding.total_quantity or Decimal("0")
+                price = Decimal(str(current_price)) if current_price is not None else (holding.current_price_usd or Decimal("0"))
+                current_weights[symbol] = float((qty * price) / total_value)
+        else:
+            n = len(holdings_rows)
+            current_weights = {symbol: 1.0 / n for _h, symbol, _p in holdings_rows}
+
+        vol = mpt.annualized_volatility(returns_df)
+        stats = mpt.portfolio_stats(returns_df, current_weights)
+        lines.append(f"- Based on {len(returns_df)} days of price history.")
+        for symbol, v in vol.items():
+            lines.append(f"- {symbol}: annualized_volatility={v:.2%}")
+        lines.append(
+            f"- Portfolio (current allocation): expected_annual_return={stats['expected_annual_return']:.2%}, "
+            f"annual_volatility={stats['annual_volatility']:.2%}, sharpe_ratio={stats['sharpe_ratio']:.2f}"
+        )
 
     if recent_trades:
         lines.append(f"\nMost recent trades (up to {RECENT_TRADES_LIMIT}):")
