@@ -75,8 +75,12 @@ class RedisClient:
                 return token in self._memory_blacklist
         except Exception as e:
             print(f"❌ Error checking token blacklist: {e}")
-            # On error, assume token is not blacklisted (fail-safe)
-            return False
+            # Fail CLOSED: if we can't confirm a token is *not* revoked (e.g. Redis
+            # is briefly unreachable), treat it as blacklisted so a logged-out or
+            # revoked token can't be replayed during the outage. The caller turns
+            # this into a 401, forcing a fresh login rather than silently trusting
+            # a token whose revocation state is unknown.
+            return True
     
     # ---- OTP storage (email verification / registration codes) ----
 
