@@ -85,10 +85,18 @@ class RedisClient:
     # ---- OTP storage (email verification / registration codes) ----
 
     def store_otp(self, email: str, otp: str, expires_in_seconds: int = 600, max_attempts: int = 3) -> bool:
-        """Store an OTP for an email with an expiry and attempt counter."""
-        payload = json.dumps({"otp": otp, "attempts": 0, "max_attempts": max_attempts})
+        """Store an OTP for an email with an expiry and attempt counter.
+
+        The attempt counter lives in its own key (see verify_otp) so it can be
+        incremented atomically via Redis INCR, rather than embedded in this
+        JSON payload and updated via a non-atomic GET-then-SETEX.
+        """
+        payload = json.dumps({"otp": otp, "max_attempts": max_attempts})
         try:
             if self.connected:
+                # Clear any leftover attempt counter from a previous OTP for
+                # this email before the new one starts accumulating attempts.
+                self.redis_client.delete(f"otp_attempts:{email}")
                 return bool(self.redis_client.setex(f"otp:{email}", expires_in_seconds, payload))
             # in-memory fallback
             if not hasattr(self, "_memory_otp"):
@@ -105,25 +113,34 @@ class RedisClient:
             return False
 
     def verify_otp(self, email: str, otp: str) -> tuple[bool, str]:
-        """Verify an OTP, enforcing expiry and a max-attempts limit."""
+        """Verify an OTP, enforcing expiry and a max-attempts limit.
+
+        The attempt count is tracked via Redis INCR (atomic even under
+        concurrent requests) instead of a read-modify-write on the OTP's own
+        JSON blob, which let concurrent guesses race past max_attempts.
+        """
         try:
             if self.connected:
                 key = f"otp:{email}"
+                attempts_key = f"otp_attempts:{email}"
                 raw = self.redis_client.get(key)
                 if not raw:
                     return False, "No OTP found or it has expired"
                 data = json.loads(raw)
-                if data["otp"] == otp:
-                    self.redis_client.delete(key)
-                    return True, "OTP verified successfully"
-                data["attempts"] += 1
-                if data["attempts"] >= data["max_attempts"]:
-                    self.redis_client.delete(key)
+                max_attempts = data["max_attempts"]
+
+                attempts = self.redis_client.incr(attempts_key)
+                if attempts == 1:
+                    ttl = self.redis_client.ttl(key)
+                    self.redis_client.expire(attempts_key, ttl if ttl and ttl > 0 else 600)
+                if attempts > max_attempts:
+                    self.redis_client.delete(key, attempts_key)
                     return False, "Too many failed attempts"
-                # Preserve remaining TTL while updating the attempt counter
-                ttl = self.redis_client.ttl(key)
-                self.redis_client.setex(key, ttl if ttl and ttl > 0 else 600, json.dumps(data))
-                return False, f"Invalid OTP. {data['max_attempts'] - data['attempts']} attempts remaining"
+
+                if data["otp"] == otp:
+                    self.redis_client.delete(key, attempts_key)
+                    return True, "OTP verified successfully"
+                return False, f"Invalid OTP. {max_attempts - attempts} attempts remaining"
 
             # in-memory fallback
             store = getattr(self, "_memory_otp", {})
