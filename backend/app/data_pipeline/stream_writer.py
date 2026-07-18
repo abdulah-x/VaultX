@@ -47,16 +47,21 @@ async def _write_batch(entries: list) -> list:
         history_rows = []
         latest_price_by_asset = {}
 
-        for _message_id, payload in entries:
-            base_symbol = _base_symbol(payload["symbol"])
-            asset_id = asset_map.get(base_symbol)
-            if asset_id is None:
-                continue  # unknown asset (not yet seeded) - skip rather than guess
+        for message_id, payload in entries:
             try:
+                symbol = payload["symbol"]
+                base_symbol = _base_symbol(symbol)
+                asset_id = asset_map.get(base_symbol)
+                if asset_id is None:
+                    continue  # unknown asset (not yet seeded) - skip rather than guess
                 price = Decimal(str(payload["price"]))
-            except InvalidOperation:
+                ts = datetime.fromisoformat(payload["timestamp"])
+            except (KeyError, InvalidOperation, ValueError, TypeError) as e:
+                # One malformed tick must not abort/roll back the rest of the
+                # batch (a bad timestamp used to raise past this loop and take
+                # every already-valid row in the batch down with it via db.rollback()).
+                logger.warning("Skipping malformed tick %s: %s", message_id, e)
                 continue
-            ts = datetime.fromisoformat(payload["timestamp"])
 
             history_rows.append({"asset_id": asset_id, "price_usd": price, "timestamp": ts})
 
@@ -92,6 +97,16 @@ async def run_stream_writer() -> None:
     logger.info("Stream writer started, consumer=%s", CONSUMER_NAME)
     while True:
         try:
+            # Reclaim messages left in the PEL by a writer that crashed
+            # mid-batch before acking - `XREADGROUP ... >` below only ever
+            # hands out brand-new messages, so without this those ticks would
+            # sit stuck (and never be written) forever.
+            stale_entries = await redis_streams.claim_stale_pending(CONSUMER_NAME, count=BATCH_COUNT)
+            if stale_entries:
+                logger.warning("Reclaimed %d stale pending ticks", len(stale_entries))
+                acked_ids = await _write_batch(stale_entries)
+                await redis_streams.ack(acked_ids)
+
             entries = await redis_streams.read_batch(CONSUMER_NAME, count=BATCH_COUNT, block_ms=BLOCK_MS)
             if not entries:
                 continue
