@@ -183,9 +183,14 @@ class TradeHistoryImporter:
             skipped_count = 0
             
             for trade_data in trades:
-                # Check if trade already exists
+                # Check if trade already exists. Binance trade IDs are only unique
+                # *within a symbol* (BTCUSDT trade #123 and ETHUSDT trade #123 are
+                # different trades), so the dedup key must include the symbol —
+                # otherwise a genuine trade gets silently swallowed as a "duplicate"
+                # of an unrelated trade on another pair.
                 existing = db.query(Trade).filter(
                     Trade.user_id == trade_data['user_id'],
+                    Trade.symbol == trade_data['symbol'],
                     Trade.binance_trade_id == trade_data['binance_trade_id']
                 ).first()
                 
