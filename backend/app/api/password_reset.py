@@ -13,6 +13,7 @@ from core.dependencies import get_db
 from core.auth import auth_manager
 from core.config import settings
 from core.errors import AuthenticationError, NotFoundError, DatabaseError
+from core.redis_client import redis_client
 from database.models import User
 from services.email_service import email_service
 from core.audit import log_audit_event
@@ -106,6 +107,12 @@ async def reset_password(
     Reset password using the token from email
     """
     try:
+        # Reject a reset token that has already been used. Reset tokens are valid
+        # for an hour, so without this a single link could reset the password
+        # repeatedly (or be replayed if intercepted) until it expired.
+        if redis_client.is_token_blacklisted(request.token):
+            raise AuthenticationError("This reset link has already been used")
+
         # Verify token
         payload = auth_manager.verify_token(request.token)
 
@@ -128,6 +135,12 @@ async def reset_password(
         from datetime import datetime
         user.updated_at = datetime.utcnow()
         db.commit()
+
+        # Burn the reset token so it can't be reused. Blacklist it for its
+        # remaining lifetime (bounded by the token's own 1-hour expiry).
+        remaining_ttl = int(payload.get("exp", 0) - datetime.utcnow().timestamp())
+        if remaining_ttl > 0:
+            redis_client.blacklist_token(request.token, remaining_ttl)
 
         # Invalidate all user sessions (force re-login)
         auth_manager.invalidate_user_sessions(db, user.id)
