@@ -6,6 +6,8 @@ Stateless, single-turn: each request fetches a fresh snapshot of the user's
 own holdings/trades/P&L (see services/ai/context.py) and asks Gemini
 (via LangChain) to answer the question grounded in that context.
 """
+import logging
+
 from fastapi import APIRouter, Depends
 from pydantic import BaseModel, Field
 
@@ -16,6 +18,7 @@ from services.ai.client import gemini_client, DISCLAIMER
 from services.ai.context import build_portfolio_context
 
 router = APIRouter()
+logger = logging.getLogger(__name__)
 
 
 class ChatRequest(BaseModel):
@@ -48,10 +51,11 @@ async def chat(
     try:
         answer = await gemini_client.generate(context=context, question=question)
     except Exception as e:
-        raise ExternalAPIError(
-            "The portfolio advisor is temporarily unavailable.",
-            details={"reason": str(e)},
-        )
+        # Log the real exception server-side only - returning it in `details`
+        # would leak internal error text (SDK internals, stack traces) to API
+        # consumers, who only need to know the advisor is unavailable.
+        logger.error("Advisor generate() failed for user %s: %s", current_user.id, e)
+        raise ExternalAPIError("The portfolio advisor is temporarily unavailable.")
 
     return ChatResponse(
         answer=answer,
