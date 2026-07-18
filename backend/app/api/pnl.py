@@ -18,26 +18,10 @@ from sqlalchemy import func
 from database import SessionLocal, User, Asset, Holding, Trade, CurrentPrice
 from core.dependencies import get_db, get_current_active_user
 from core.errors import DatabaseError, ValidationError, NotFoundError
+from core.decimal_utils import stringify_decimals as _stringify_decimals
 from pydantic import BaseModel
 
 router = APIRouter()
-
-
-def _stringify_decimals(obj):
-    """Recursively convert Decimal values to strings for JSON output.
-
-    Monetary columns are stored as DECIMAL(20,8); casting them to float on the
-    way out (float(value)) silently loses precision (e.g. 0.1+0.2 drift). Emitting
-    them as strings preserves the exact stored value. Applied to the whole
-    response at the end so internal math/sorting still runs on real Decimals.
-    """
-    if isinstance(obj, Decimal):
-        return str(obj)
-    if isinstance(obj, dict):
-        return {k: _stringify_decimals(v) for k, v in obj.items()}
-    if isinstance(obj, list):
-        return [_stringify_decimals(v) for v in obj]
-    return obj
 
 # Pydantic models
 class AssetPnL(BaseModel):

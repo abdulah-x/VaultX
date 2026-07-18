@@ -12,6 +12,7 @@ import logging
 from core.dependencies import get_db, get_current_active_user
 from core.errors import DatabaseError, ValidationError
 from core.audit import log_audit_event
+from core.decimal_utils import stringify_decimals
 from database.models import User, Trade
 from services.binance.client import BinanceClientManager, run_sync
 from api.portfolio_sync import get_or_create_asset
@@ -307,30 +308,31 @@ async def get_trade_analysis(
                 "trades_count": 0
             }
         
-        # Perform analysis
+        # Perform analysis (kept in Decimal throughout; stringified at the
+        # response boundary below to avoid float precision loss on money fields)
         analysis = {
             "total_trades": len(trades),
-            "total_volume": float(sum(trade.quote_quantity for trade in trades if trade.quote_quantity)),
-            "total_commission": float(sum(trade.commission for trade in trades if trade.commission)),
+            "total_volume": sum((trade.quote_quantity for trade in trades if trade.quote_quantity), Decimal('0')),
+            "total_commission": sum((trade.commission for trade in trades if trade.commission), Decimal('0')),
             "buy_trades": len([t for t in trades if t.side == "BUY"]),
             "sell_trades": len([t for t in trades if t.side == "SELL"]),
             "symbols_traded": len(set(trade.symbol for trade in trades)),
-            "average_trade_size": 0,
-            "largest_trade": 0,
-            "smallest_trade": float('inf'),
+            "average_trade_size": Decimal('0'),
+            "largest_trade": Decimal('0'),
+            "smallest_trade": None,
             "trading_frequency": {},
             "symbol_breakdown": {},
             "daily_volume": {}
         }
-        
+
         # Calculate averages and extremes
         if trades:
-            volumes = [float(trade.quote_quantity) for trade in trades if trade.quote_quantity]
+            volumes = [trade.quote_quantity for trade in trades if trade.quote_quantity]
             if volumes:
-                analysis["average_trade_size"] = sum(volumes) / len(volumes)
+                analysis["average_trade_size"] = sum(volumes, Decimal('0')) / len(volumes)
                 analysis["largest_trade"] = max(volumes)
                 analysis["smallest_trade"] = min(volumes)
-        
+
         # Symbol breakdown
         symbol_stats = {}
         for trade in trades:
@@ -338,31 +340,31 @@ async def get_trade_analysis(
             if symbol not in symbol_stats:
                 symbol_stats[symbol] = {
                     "trades": 0,
-                    "volume": 0,
+                    "volume": Decimal('0'),
                     "buy_trades": 0,
                     "sell_trades": 0
                 }
-            
+
             symbol_stats[symbol]["trades"] += 1
-            symbol_stats[symbol]["volume"] += float(trade.quote_quantity or 0)
+            symbol_stats[symbol]["volume"] += trade.quote_quantity or Decimal('0')
             if trade.side == "BUY":
                 symbol_stats[symbol]["buy_trades"] += 1
             else:
                 symbol_stats[symbol]["sell_trades"] += 1
-        
+
         analysis["symbol_breakdown"] = symbol_stats
-        
+
         # Daily volume
         daily_volumes = {}
         for trade in trades:
             date_key = trade.executed_at.strftime('%Y-%m-%d')
             if date_key not in daily_volumes:
-                daily_volumes[date_key] = 0
-            daily_volumes[date_key] += float(trade.quote_quantity or 0)
-        
+                daily_volumes[date_key] = Decimal('0')
+            daily_volumes[date_key] += trade.quote_quantity or Decimal('0')
+
         analysis["daily_volume"] = daily_volumes
-        
-        return {
+
+        return stringify_decimals({
             "success": True,
             "analysis": analysis,
             "period": {
@@ -371,8 +373,8 @@ async def get_trade_analysis(
                 "end_date": datetime.utcnow().isoformat()
             },
             "symbol_filter": symbol
-        }
-        
+        })
+
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Analysis failed: {str(e)}")
 

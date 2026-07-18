@@ -17,6 +17,7 @@ sys.path.append(str(Path(__file__).parent.parent))
 from database import SessionLocal, User, Asset, Holding, CurrentPrice
 from core.dependencies import get_db, get_current_active_user, get_optional_current_user
 from core.errors import NotFoundError, ValidationError, DatabaseError
+from core.decimal_utils import stringify_decimals
 from pydantic import BaseModel
 
 router = APIRouter()
@@ -102,44 +103,44 @@ async def get_portfolio_summary(
             holdings_list.append({
                 "asset_symbol": asset.symbol,
                 "asset_name": asset.name,
-                "total_quantity": float(holding.total_quantity),
-                "available_quantity": float(holding.available_quantity),
-                "locked_quantity": float(holding.locked_quantity),
-                "average_cost_usd": float(holding.average_cost_usd),
-                "current_price_usd": float(price_usd) if price_usd else None,
-                "current_value_usd": float(current_value) if current_value else None,
-                "unrealized_pnl_usd": float(unrealized_pnl),
-                "unrealized_pnl_percentage": float(unrealized_pnl_pct),
-                "portfolio_percentage": 0  # Will calculate after total
+                "total_quantity": holding.total_quantity,
+                "available_quantity": holding.available_quantity,
+                "locked_quantity": holding.locked_quantity,
+                "average_cost_usd": holding.average_cost_usd,
+                "current_price_usd": price_usd if price_usd else None,
+                "current_value_usd": current_value if current_value else None,
+                "unrealized_pnl_usd": unrealized_pnl,
+                "unrealized_pnl_percentage": unrealized_pnl_pct,
+                "portfolio_percentage": Decimal('0')  # Will calculate after total
             })
-            
+
             total_value += current_value
             total_cost += holding.total_cost_usd
-        
+
         # Calculate portfolio percentages
         for holding in holdings_list:
             if total_value > 0 and holding["current_value_usd"]:
-                holding["portfolio_percentage"] = float((Decimal(str(holding["current_value_usd"])) / total_value) * 100)
-        
+                holding["portfolio_percentage"] = (holding["current_value_usd"] / total_value) * 100
+
         # Overall P&L
         total_pnl = total_value - total_cost
         total_pnl_pct = (total_pnl / total_cost * 100) if total_cost > 0 else Decimal('0')
-        
-        return {
+
+        return stringify_decimals({
             "success": True,
             "user_id": current_user.id,
             "timestamp": datetime.utcnow().isoformat(),
             "portfolio_summary": {
-                "total_portfolio_value_usd": float(total_value),
-                "total_cost_usd": float(total_cost),
-                "total_unrealized_pnl_usd": float(total_pnl),
-                "total_unrealized_pnl_percentage": float(total_pnl_pct),
+                "total_portfolio_value_usd": total_value,
+                "total_cost_usd": total_cost,
+                "total_unrealized_pnl_usd": total_pnl,
+                "total_unrealized_pnl_percentage": total_pnl_pct,
                 "asset_count": len(holdings_list),
                 "last_updated": datetime.utcnow().isoformat(),
                 "holdings": holdings_list
             }
-        }
-        
+        })
+
     except Exception as e:
         raise DatabaseError(f"Error fetching portfolio: {str(e)}")
 
@@ -172,19 +173,19 @@ async def get_portfolio_overview(
         total_cost = sum(h.total_cost_usd for h in holdings)
         total_pnl = total_value - total_cost
         total_pnl_pct = (total_pnl / total_cost * 100) if total_cost > 0 else Decimal('0')
-        
-        return {
+
+        return stringify_decimals({
             "success": True,
             "user_id": current_user.id,
             "timestamp": datetime.utcnow().isoformat(),
             "summary": {
-                "total_value_usd": float(total_value),
-                "total_cost_usd": float(total_cost),
-                "total_pnl_usd": float(total_pnl),
-                "total_pnl_percentage": float(total_pnl_pct),
+                "total_value_usd": total_value,
+                "total_cost_usd": total_cost,
+                "total_pnl_usd": total_pnl,
+                "total_pnl_percentage": total_pnl_pct,
                 "asset_count": len(holdings)
             }
-        }
+        })
         
     except Exception as e:
         raise DatabaseError(f"Error fetching portfolio summary: {str(e)}")
@@ -238,7 +239,10 @@ async def get_portfolio_performance(
         # Get full portfolio data
         portfolio_data = await get_portfolio_summary(current_user, db)
         portfolio_summary = portfolio_data.get("portfolio_summary", {})
-        
+        # total_unrealized_pnl_usd comes back as a string (stringify_decimals
+        # applied in get_portfolio_summary) - parse for the numeric comparison.
+        unrealized_pnl = Decimal(str(portfolio_summary.get("total_unrealized_pnl_usd", 0) or 0))
+
         # Extract performance metrics
         return {
             "success": True,
@@ -251,8 +255,8 @@ async def get_portfolio_performance(
                 "total_unrealized_pnl_percentage": portfolio_summary.get("total_unrealized_pnl_percentage", 0),
                 "asset_count": portfolio_summary.get("asset_count", 0),
                 "performance_summary": {
-                    "is_profitable": portfolio_summary.get("total_unrealized_pnl_usd", 0) > 0,
-                    "performance_grade": "Positive" if portfolio_summary.get("total_unrealized_pnl_usd", 0) > 0 else "Negative",
+                    "is_profitable": unrealized_pnl > 0,
+                    "performance_grade": "Positive" if unrealized_pnl > 0 else "Negative",
                     "last_updated": portfolio_summary.get("last_updated")
                 }
             }

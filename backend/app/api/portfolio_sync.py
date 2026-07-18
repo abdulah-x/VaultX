@@ -13,6 +13,7 @@ import logging
 from core.dependencies import get_db, get_current_active_user
 from core.errors import DatabaseError, ValidationError
 from core.audit import log_audit_event
+from core.decimal_utils import stringify_decimals
 from database.models import User, Holding, Asset
 from services.binance.client import BinanceClientManager, run_sync
 from services.binance.account import BinanceAccountService
@@ -156,47 +157,50 @@ class AdvancedPortfolioSync:
         # Get all tickers at once (blocking call offloaded to a thread)
         try:
             all_tickers = await run_sync(client.get_all_tickers)
-            ticker_dict = {ticker['symbol']: float(ticker['price']) for ticker in all_tickers}
-            
+            # Keep Decimal from the Binance string straight through - going via
+            # float() here and Decimal(str(float)) later double-rounds the value
+            # before it's ever stored.
+            ticker_dict = {ticker['symbol']: Decimal(str(ticker['price'])) for ticker in all_tickers}
+
             for balance in balances:
                 asset = balance['asset']
-                
+
                 # Try different symbol combinations
                 potential_symbols = [
                     f"{asset}USDT",
-                    f"{asset}BUSD", 
+                    f"{asset}BUSD",
                     f"{asset}BTC",
                     f"{asset}ETH"
                 ]
-                
+
                 for symbol in potential_symbols:
                     if symbol in ticker_dict:
                         prices[asset] = ticker_dict[symbol]
                         break
-                
+
                 # For stablecoins, assume $1
                 if asset in ['USDT', 'USDC', 'BUSD', 'DAI', 'TUSD', 'USDP']:
-                    prices[asset] = 1.0
-                    
+                    prices[asset] = Decimal('1')
+
         except Exception as e:
             logger.warning(f"⚠️ Failed to get prices: {e}")
-        
+
         return prices
-    
-    def _process_assets(self, balances: List[Dict], prices: Dict[str, float]) -> List[Dict]:
+
+    def _process_assets(self, balances: List[Dict], prices: Dict[str, Decimal]) -> List[Dict]:
         """Process and categorize assets with enhanced metadata"""
         processed = []
-        
+
         # Asset categories
         major_coins = ['BTC', 'ETH', 'BNB', 'ADA', 'DOT', 'SOL', 'MATIC', 'AVAX', 'LINK']
         stablecoins = ['USDT', 'USDC', 'BUSD', 'DAI', 'TUSD', 'USDP', 'FDUSD']
-        
+
         for balance in balances:
             asset = balance['asset']
-            total_amount = float(balance['total'])
-            free_amount = float(balance['free'])
-            locked_amount = float(balance['locked'])
-            
+            total_amount = Decimal(str(balance['total']))
+            free_amount = Decimal(str(balance['free']))
+            locked_amount = Decimal(str(balance['locked']))
+
             # Determine category
             if asset in major_coins:
                 category = "major"
@@ -206,11 +210,11 @@ class AdvancedPortfolioSync:
                 category = "altcoin" if asset not in ['BTC', 'ETH'] else "major"
             else:
                 category = "other"
-            
+
             # Calculate USD value
-            price = prices.get(asset, 0)
+            price = prices.get(asset, Decimal('0'))
             usd_value = total_amount * price
-            
+
             processed.append({
                 "asset": asset,
                 "total_amount": total_amount,
@@ -219,13 +223,13 @@ class AdvancedPortfolioSync:
                 "category": category,
                 "price_usd": price,
                 "value_usd": usd_value,
-                "percentage_locked": (locked_amount / total_amount * 100) if total_amount > 0 else 0,
+                "percentage_locked": (locked_amount / total_amount * 100) if total_amount > 0 else Decimal('0'),
                 "last_updated": datetime.utcnow().isoformat()
             })
-        
+
         # Sort by USD value (descending)
         processed.sort(key=lambda x: x['value_usd'], reverse=True)
-        
+
         return processed
     
     async def _update_portfolio_database(self, user_id: int, assets: List[Dict], db: Session) -> Dict[str, Any]:
@@ -257,11 +261,11 @@ class AdvancedPortfolioSync:
             for asset_data in assets:
                 asset = asset_by_symbol[asset_data['asset']]
 
-                total_qty = Decimal(str(asset_data['total_amount']))
-                free_qty = Decimal(str(asset_data['free_amount']))
-                locked_qty = Decimal(str(asset_data['locked_amount']))
-                price = Decimal(str(asset_data['price_usd'])) if asset_data['price_usd'] > 0 else None
-                value = Decimal(str(asset_data['value_usd'])) if asset_data['value_usd'] > 0 else None
+                total_qty = asset_data['total_amount']
+                free_qty = asset_data['free_amount']
+                locked_qty = asset_data['locked_amount']
+                price = asset_data['price_usd'] if asset_data['price_usd'] > 0 else None
+                value = asset_data['value_usd'] if asset_data['value_usd'] > 0 else None
 
                 existing = holding_by_asset_id.get(asset.id)
 
@@ -300,7 +304,7 @@ class AdvancedPortfolioSync:
                 "updated_assets": updated_count,
                 "created_assets": created_count,
                 "total_processed": len(assets),
-                "total_value_usd": sum(asset['value_usd'] for asset in assets)
+                "total_value_usd": str(sum((asset['value_usd'] for asset in assets), Decimal('0')))
             }
             
         except Exception as e:
@@ -384,13 +388,14 @@ async def get_enhanced_portfolio(
         total_value = Decimal('0')
 
         for holding, symbol in rows:
-            quantity = float(holding.total_quantity or 0)
-            category = categorize_asset(symbol, quantity)
+            quantity = holding.total_quantity or Decimal('0')
+            current_value = holding.current_value_usd or Decimal('0')
+            category = categorize_asset(symbol, float(quantity))
             portfolio_data = {
                 "symbol": symbol,
                 "quantity": quantity,
-                "current_price": float(holding.current_price_usd) if holding.current_price_usd else 0,
-                "current_value": float(holding.current_value_usd) if holding.current_value_usd else 0,
+                "current_price": holding.current_price_usd or Decimal('0'),
+                "current_value": current_value,
                 "category": category,
                 "last_updated": holding.updated_at.isoformat() if holding.updated_at else None
             }
@@ -404,10 +409,10 @@ async def get_enhanced_portfolio(
             else:
                 others.append(portfolio_data)
 
-            total_value += holding.current_value_usd or Decimal('0')
-        
+            total_value += current_value
+
         analytics = {
-            "total_value_usd": float(total_value),
+            "total_value_usd": total_value,
             "asset_counts": {
                 "major_coins": len(major_coins),
                 "stablecoins": len(stablecoins),
@@ -416,14 +421,14 @@ async def get_enhanced_portfolio(
                 "total": len(rows)
             },
             "allocation": {
-                "major_coins_value": sum(p['current_value'] for p in major_coins),
-                "stablecoins_value": sum(p['current_value'] for p in stablecoins),
-                "altcoins_value": sum(p['current_value'] for p in altcoins),
-                "others_value": sum(p['current_value'] for p in others)
+                "major_coins_value": sum((p['current_value'] for p in major_coins), Decimal('0')),
+                "stablecoins_value": sum((p['current_value'] for p in stablecoins), Decimal('0')),
+                "altcoins_value": sum((p['current_value'] for p in altcoins), Decimal('0')),
+                "others_value": sum((p['current_value'] for p in others), Decimal('0'))
             }
         }
-        
-        return {
+
+        return stringify_decimals({
             "success": True,
             "portfolios": {
                 "major_coins": major_coins,
@@ -433,8 +438,8 @@ async def get_enhanced_portfolio(
             },
             "analytics": analytics,
             "last_sync": current_user.last_sync_at.isoformat() if current_user.last_sync_at else None
-        }
-        
+        })
+
     except Exception as e:
         logger.error(f"Failed to get enhanced portfolio: {str(e)}")
         raise DatabaseError(f"Failed to get enhanced portfolio: {str(e)}")

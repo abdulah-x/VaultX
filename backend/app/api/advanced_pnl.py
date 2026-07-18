@@ -11,6 +11,7 @@ import logging
 from collections import defaultdict
 
 from core.dependencies import get_db, get_current_active_user
+from core.decimal_utils import stringify_decimals
 from database.models import User, Holding, Trade, Asset
 from services.binance.client import BinanceClientManager, run_sync
 
@@ -92,15 +93,15 @@ class AdvancedPnLCalculator:
             
             logger.info(f"✅ P&L calculation completed for user {user_id}")
             
-            return {
+            return stringify_decimals({
                 "success": True,
                 "pnl_summary": summary,
                 "detailed_pnl": pnl_results,
                 "calculation_time": datetime.utcnow().isoformat(),
                 "period_days": days,
                 "symbol_filter": symbol
-            }
-            
+            })
+
         except Exception as e:
             logger.error(f"❌ P&L calculation failed for user {user_id}: {e}")
             return {
@@ -186,37 +187,44 @@ class AdvancedPnLCalculator:
         return portfolio_pnl
     
     async def _calculate_trade_based_pnl(self, trades: List[Trade], current_prices: Dict[str, float], db: Session) -> Dict[str, Any]:
-        """Calculate P&L based on actual trades (FIFO method)"""
+        """Calculate P&L based on actual trades (FIFO method).
+
+        Kept in Decimal throughout (trade.quantity/price are DECIMAL columns) and
+        stringified at the return boundary, to avoid float precision loss on
+        money fields. `current_prices` stays float since it's live Binance
+        market data, not a stored value - converted to Decimal(str(...)) at the
+        point of use instead.
+        """
         if not trades:
             return {"message": "No trades available for calculation"}
-        
+
         # Group trades by symbol
         trades_by_symbol = defaultdict(list)
         for trade in trades:
             trades_by_symbol[trade.symbol].append(trade)
-        
+
         trade_pnl = {
-            "realized_pnl": 0,
-            "unrealized_pnl": 0,
-            "total_pnl": 0,
+            "realized_pnl": Decimal('0'),
+            "unrealized_pnl": Decimal('0'),
+            "total_pnl": Decimal('0'),
             "assets": []
         }
-        
+
         for symbol, symbol_trades in trades_by_symbol.items():
             # Sort trades by execution time
             symbol_trades.sort(key=lambda x: x.executed_at)
-            
+
             # Calculate using FIFO method
-            position = 0  # Current position
-            avg_cost = 0   # Average cost basis
-            realized_pnl = 0
-            total_bought = 0
-            total_sold = 0
-            
+            position = Decimal('0')  # Current position
+            avg_cost = Decimal('0')   # Average cost basis
+            realized_pnl = Decimal('0')
+            total_bought = Decimal('0')
+            total_sold = Decimal('0')
+
             for trade in symbol_trades:
-                quantity = float(trade.quantity)
-                price = float(trade.price)
-                
+                quantity = trade.quantity
+                price = trade.price
+
                 if trade.side == "BUY":
                     # Update average cost basis
                     if position >= 0:
@@ -240,8 +248,8 @@ class AdvancedPnLCalculator:
                         total_sold += sell_quantity * price
             
             # Calculate unrealized P&L for remaining position
-            current_price = current_prices.get(symbol.replace('USDT', '').replace('BUSD', ''), 0)
-            unrealized_pnl = position * (current_price - avg_cost) if position > 0 and current_price > 0 else 0
+            current_price = Decimal(str(current_prices.get(symbol.replace('USDT', '').replace('BUSD', ''), 0)))
+            unrealized_pnl = position * (current_price - avg_cost) if position > 0 and current_price > 0 else Decimal('0')
             
             asset_pnl = {
                 "symbol": symbol,
