@@ -6,7 +6,7 @@ from sqlalchemy.orm import Session
 from typing import Dict, Any, List
 from decimal import Decimal
 
-from core.dependencies import get_db, get_current_active_user
+from core.dependencies import get_db, get_current_active_user, require_admin
 from core.errors import DatabaseError, ValidationError
 from database.models import User
 from services.binance.client import BinanceClientManager
@@ -157,23 +157,41 @@ async def get_test_data_info(
 
 @router.post("/binance/emergency-disable", response_model=Dict[str, Any])
 async def emergency_disable_binance(
-    current_user: User = Depends(get_current_active_user)
+    current_user: User = Depends(require_admin)
 ):
     """
-    Emergency disable Binance API access
+    Emergency disable Binance API access (admin only). Flips a class-level
+    flag shared by every BinanceClientManager instance app-wide, so it takes
+    effect immediately for all future calls without needing a restart.
     """
     try:
-        client_manager = BinanceClientManager()
-        client_manager.emergency_disable()
-        
+        BinanceClientManager.emergency_disable()
+
         return {
             "success": True,
             "message": "🚨 EMERGENCY: Binance API access has been DISABLED",
             "disabled": True
         }
-        
+
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Emergency disable failed: {str(e)}")
+
+@router.post("/binance/emergency-enable", response_model=Dict[str, Any])
+async def emergency_enable_binance(
+    current_user: User = Depends(require_admin)
+):
+    """Re-enable Binance API access after an emergency disable (admin only)."""
+    try:
+        BinanceClientManager.emergency_enable()
+
+        return {
+            "success": True,
+            "message": "Binance API access has been RE-ENABLED",
+            "disabled": False
+        }
+
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Emergency enable failed: {str(e)}")
 
 @router.get("/binance/prices/{symbol}", response_model=Dict[str, Any])
 async def get_symbol_price(

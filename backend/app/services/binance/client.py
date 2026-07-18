@@ -29,6 +29,14 @@ async def run_sync(func: Callable, *args, **kwargs):
     return await loop.run_in_executor(None, functools.partial(func, *args, **kwargs))
 
 class BinanceClientManager:
+    # Class-level (shared across every instance) so an in-process emergency
+    # disable actually takes effect immediately. Every API route constructs a
+    # fresh BinanceClientManager() per call - if these lived on `self` instead,
+    # emergency_disable() on one instance would be invisible to the very next
+    # request's brand-new instance, making the kill-switch a no-op in practice.
+    _emergency_disabled = os.getenv('EMERGENCY_DISABLE_BINANCE', 'false').lower() == 'true'
+    _maintenance_mode = os.getenv('MAINTENANCE_MODE', 'false').lower() == 'true'
+
     def __init__(self):
         self.api_key = os.getenv('BINANCE_API_KEY')
         self.secret_key = os.getenv('BINANCE_SECRET_KEY')
@@ -38,37 +46,41 @@ class BinanceClientManager:
         self.last_request_time = 0
         self.request_count = 0
         self.rate_limit_per_minute = int(os.getenv('BINANCE_RATE_LIMIT_PER_MINUTE', '1000'))
-        
-        # Emergency controls
-        self.emergency_disabled = os.getenv('EMERGENCY_DISABLE_BINANCE', 'false').lower() == 'true'
-        self.maintenance_mode = os.getenv('MAINTENANCE_MODE', 'false').lower() == 'true'
-        
+
         # Validate configuration
         self._validate_config()
-    
+
+    @property
+    def emergency_disabled(self) -> bool:
+        return BinanceClientManager._emergency_disabled
+
+    @property
+    def maintenance_mode(self) -> bool:
+        return BinanceClientManager._maintenance_mode
+
     def _validate_config(self):
         """Validate API key configuration and permissions"""
         if not self.api_key or not self.secret_key:
             logger.error("❌ Binance API keys not configured")
             return False
-        
+
         if self.api_key == "your_testnet_api_key_here":
             logger.error("❌ Please update BINANCE_API_KEY in .env file")
             return False
-            
+
         logger.info(f"🔧 Binance Configuration:")
         logger.info(f"   Mode: {'TESTNET' if self.testnet else '🚨 MAINNET'}")
         logger.info(f"   API Key: {self.api_key[:8]}...")
         logger.info(f"   Rate Limit: {self.rate_limit_per_minute}/min")
         logger.info(f"   Emergency Disabled: {self.emergency_disabled}")
-        
+
         return True
-    
+
     def _check_emergency_controls(self):
         """Check if emergency controls are activated"""
         if self.emergency_disabled:
             raise Exception("🚨 EMERGENCY: Binance API access is disabled")
-        
+
         if self.maintenance_mode:
             raise Exception("🔧 MAINTENANCE: Binance API is in maintenance mode")
     
@@ -186,9 +198,16 @@ class BinanceClientManager:
             "api_key_configured": bool(self.api_key and self.api_key != "your_testnet_api_key_here")
         }
     
-    def emergency_disable(self):
-        """Emergency disable Binance API access"""
-        self.emergency_disabled = True
-        self.connected = False
-        self.client = None
+    @classmethod
+    def emergency_disable(cls):
+        """Emergency disable Binance API access - takes effect for every
+        instance immediately, including ones already constructed, since the
+        flag is class-level state rather than per-instance."""
+        cls._emergency_disabled = True
         logger.critical("🚨 EMERGENCY: Binance API access DISABLED")
+
+    @classmethod
+    def emergency_enable(cls):
+        """Clear the in-process emergency disable."""
+        cls._emergency_disabled = False
+        logger.warning("Binance API access RE-ENABLED")
