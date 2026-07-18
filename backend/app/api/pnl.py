@@ -22,6 +22,23 @@ from pydantic import BaseModel
 
 router = APIRouter()
 
+
+def _stringify_decimals(obj):
+    """Recursively convert Decimal values to strings for JSON output.
+
+    Monetary columns are stored as DECIMAL(20,8); casting them to float on the
+    way out (float(value)) silently loses precision (e.g. 0.1+0.2 drift). Emitting
+    them as strings preserves the exact stored value. Applied to the whole
+    response at the end so internal math/sorting still runs on real Decimals.
+    """
+    if isinstance(obj, Decimal):
+        return str(obj)
+    if isinstance(obj, dict):
+        return {k: _stringify_decimals(v) for k, v in obj.items()}
+    if isinstance(obj, list):
+        return [_stringify_decimals(v) for v in obj]
+    return obj
+
 # Pydantic models
 class AssetPnL(BaseModel):
     symbol: str
@@ -136,16 +153,16 @@ async def get_portfolio_pnl(
             
             asset_pnl = {
                 "symbol": symbol,
-                "quantity": float(quantity),
-                "average_buy_price": float(avg_buy_price),
-                "current_price": float(current_price),
-                "total_cost": float(total_cost),
-                "current_value": float(current_value),
-                "unrealized_pnl": float(unrealized_pnl),
-                "unrealized_pnl_percentage": float(unrealized_pnl_pct),
-                "realized_pnl": float(realized_pnl),
-                "total_pnl": float(total_pnl),
-                "total_pnl_percentage": float((total_pnl / total_cost * 100) if total_cost > 0 else Decimal('0'))
+                "quantity": quantity,
+                "average_buy_price": avg_buy_price,
+                "current_price": current_price,
+                "total_cost": total_cost,
+                "current_value": current_value,
+                "unrealized_pnl": unrealized_pnl,
+                "unrealized_pnl_percentage": unrealized_pnl_pct,
+                "realized_pnl": realized_pnl,
+                "total_pnl": total_pnl,
+                "total_pnl_percentage": (total_pnl / total_cost * 100) if total_cost > 0 else Decimal('0')
             }
             
             asset_pnl_list.append(asset_pnl)
@@ -170,17 +187,17 @@ async def get_portfolio_pnl(
             best_performer = sorted_assets[0] if sorted_assets[0]['total_pnl_percentage'] > 0 else None
             worst_performer = sorted_assets[-1] if sorted_assets[-1]['total_pnl_percentage'] < 0 else None
         
-        return {
+        return _stringify_decimals({
             "success": True,
             "user_id": current_user.id,
             "timestamp": datetime.utcnow().isoformat(),
             "summary": {
-                "total_portfolio_value": float(total_portfolio_value),
-                "total_invested": float(total_invested),
-                "total_unrealized_pnl": float(total_unrealized_pnl),
-                "total_realized_pnl": float(total_realized_pnl),
-                "total_pnl": float(total_pnl),
-                "total_pnl_percentage": float(total_pnl_percentage),
+                "total_portfolio_value": total_portfolio_value,
+                "total_invested": total_invested,
+                "total_unrealized_pnl": total_unrealized_pnl,
+                "total_realized_pnl": total_realized_pnl,
+                "total_pnl": total_pnl,
+                "total_pnl_percentage": total_pnl_percentage,
                 "asset_count": len(asset_pnl_list),
                 "profitable_assets": len([a for a in asset_pnl_list if a['total_pnl'] > 0]),
                 "losing_assets": len([a for a in asset_pnl_list if a['total_pnl'] < 0])
@@ -190,8 +207,8 @@ async def get_portfolio_pnl(
                 "worst_performer": worst_performer
             },
             "assets": sorted(asset_pnl_list, key=lambda x: x['current_value'], reverse=True)
-        }
-        
+        })
+
     except Exception as e:
         raise DatabaseError(f"Error calculating P&L: {str(e)}")
 
@@ -243,19 +260,19 @@ async def get_pnl_summary(
         losing = sum(1 for h in holdings if (h.unrealized_pnl_usd or 0) < 0)
 
         summary_data = {
-            "total_portfolio_value": float(total_value),
-            "total_invested": float(total_cost),
-            "total_unrealized_pnl": float(total_unrealized),
-            "total_realized_pnl": 0.0,
-            "total_pnl": float(total_unrealized),
-            "total_pnl_percentage": float(total_pnl_pct),
+            "total_portfolio_value": total_value,
+            "total_invested": total_cost,
+            "total_unrealized_pnl": total_unrealized,
+            "total_realized_pnl": Decimal('0'),
+            "total_pnl": total_unrealized,
+            "total_pnl_percentage": total_pnl_pct,
             "asset_count": len(holdings),
             "profitable_assets": profitable,
             "losing_assets": losing
         }
-        
+
         # Return the summary
-        return {
+        return _stringify_decimals({
             "success": True,
             "user_id": current_user.id,
             "timestamp": datetime.utcnow().isoformat(),
@@ -264,8 +281,8 @@ async def get_pnl_summary(
                 "best_performer": None,
                 "worst_performer": None
             }
-        }
-        
+        })
+
     except Exception as e:
         raise DatabaseError(f"Error getting P&L summary: {str(e)}")
 
