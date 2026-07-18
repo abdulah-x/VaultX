@@ -18,6 +18,7 @@ from datetime import datetime, timezone
 
 from binance.client import AsyncClient
 from binance.streams import BinanceSocketManager
+from tenacity import retry, wait_exponential, retry_if_not_exception_type, before_sleep_log
 
 from core.config import settings
 from core.redis_streams import redis_streams
@@ -28,6 +29,7 @@ logger = logging.getLogger(__name__)
 
 DEFAULT_WATCHLIST = ["BTCUSDT", "ETHUSDT", "SOLUSDT", "BNBUSDT"]
 RECONNECT_DELAY_SECONDS = 5
+MAX_RECONNECT_DELAY_SECONDS = 60
 
 # python-binance 1.0.19's built-in STREAM_TESTNET_URL ("wss://testnet.binance.vision/")
 # is wrong for market-data streams — that host serves the REST/WS-API only and 404s on
@@ -70,6 +72,39 @@ async def _handle_tick(symbol: str, msg: dict) -> None:
     await redis_streams.publish_tick(payload)
 
 
+@retry(
+    # Never gives up (this task is meant to run for the app's lifetime) and
+    # never retries a deliberate shutdown - only connection/stream failures.
+    retry=retry_if_not_exception_type(asyncio.CancelledError),
+    wait=wait_exponential(multiplier=1, min=RECONNECT_DELAY_SECONDS, max=MAX_RECONNECT_DELAY_SECONDS),
+    before_sleep=before_sleep_log(logger, logging.ERROR),
+    reraise=True,
+)
+async def _connect_and_stream() -> None:
+    """One connect-subscribe-consume attempt; raises on any drop so tenacity reconnects with backoff."""
+    client = None
+    try:
+        symbols = _get_watch_symbols()
+        logger.info("Connecting to Binance WS for symbols: %s", symbols)
+        client = await AsyncClient.create(
+            settings.binance_api_key, settings.binance_secret_key, testnet=settings.binance_testnet
+        )
+        bsm = BinanceSocketManager(client)
+        if settings.binance_testnet:
+            bsm.STREAM_TESTNET_URL = TESTNET_STREAM_URL
+        streams = [f"{s.lower()}@ticker" for s in symbols]
+        async with bsm.multiplex_socket(streams) as stream:
+            while True:
+                msg = await stream.recv()
+                data = msg.get("data", msg)
+                symbol = data.get("s")
+                if symbol:
+                    await _handle_tick(symbol, data)
+    finally:
+        if client is not None:
+            await client.close_connection()
+
+
 async def stream_binance_ticks() -> None:
     """Long-running task: connect to Binance, resubscribe on drop, forever."""
     if not settings.binance_api_key or not settings.binance_secret_key:
@@ -77,33 +112,4 @@ async def stream_binance_ticks() -> None:
         return
 
     await redis_streams.ensure_group()
-
-    while True:
-        client = None
-        try:
-            symbols = _get_watch_symbols()
-            logger.info("Connecting to Binance WS for symbols: %s", symbols)
-            client = await AsyncClient.create(
-                settings.binance_api_key, settings.binance_secret_key, testnet=settings.binance_testnet
-            )
-            bsm = BinanceSocketManager(client)
-            if settings.binance_testnet:
-                bsm.STREAM_TESTNET_URL = TESTNET_STREAM_URL
-            streams = [f"{s.lower()}@ticker" for s in symbols]
-            async with bsm.multiplex_socket(streams) as stream:
-                while True:
-                    msg = await stream.recv()
-                    data = msg.get("data", msg)
-                    symbol = data.get("s")
-                    if symbol:
-                        await _handle_tick(symbol, data)
-        except asyncio.CancelledError:
-            raise
-        except Exception as e:
-            logger.error(
-                "Binance stream connection lost: %s - reconnecting in %ss", e, RECONNECT_DELAY_SECONDS
-            )
-        finally:
-            if client is not None:
-                await client.close_connection()
-        await asyncio.sleep(RECONNECT_DELAY_SECONDS)
+    await _connect_and_stream()

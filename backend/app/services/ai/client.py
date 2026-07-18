@@ -10,11 +10,20 @@ from typing import Optional
 
 from langchain_core.prompts import ChatPromptTemplate
 from langchain_google_genai import ChatGoogleGenerativeAI
+from google.api_core.exceptions import (
+    ResourceExhausted, ServiceUnavailable, DeadlineExceeded, InternalServerError,
+)
+from tenacity import retry, stop_after_attempt, wait_exponential, retry_if_exception_type
 
 from core.config import settings
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
+
+# Transient Gemini failures worth retrying - not RuntimeError (missing API key,
+# raised before any network call) and not content/safety errors, which won't
+# succeed on retry.
+GEMINI_RETRYABLE_EXCEPTIONS = (ResourceExhausted, ServiceUnavailable, DeadlineExceeded, InternalServerError)
 
 ADVISOR_SYSTEM_PROMPT = (
     "You are VaultX's portfolio advisor. You are given a snapshot of the "
@@ -61,8 +70,17 @@ class GeminiClientManager:
 
     async def generate(self, context: str, question: str) -> str:
         chain = self._get_chain()
-        result = await chain.ainvoke({"context": context, "question": question})
+        result = await self._invoke_with_retry(chain, context, question)
         return result.content
+
+    @retry(
+        stop=stop_after_attempt(3),
+        wait=wait_exponential(multiplier=1, min=1, max=8),
+        retry=retry_if_exception_type(GEMINI_RETRYABLE_EXCEPTIONS),
+        reraise=True,
+    )
+    async def _invoke_with_retry(self, chain, context: str, question: str):
+        return await chain.ainvoke({"context": context, "question": question})
 
 
 gemini_client = GeminiClientManager()

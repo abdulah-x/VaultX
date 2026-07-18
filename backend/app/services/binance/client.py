@@ -8,6 +8,8 @@ from datetime import datetime, timedelta
 from typing import Optional, Dict, Any, Callable
 from dotenv import load_dotenv
 import logging
+from requests.exceptions import RequestException
+from tenacity import retry, stop_after_attempt, wait_exponential, retry_if_exception_type
 
 load_dotenv()
 
@@ -88,30 +90,41 @@ class BinanceClientManager:
             self.request_count = 1
             self.last_request_time = time.time()
     
+    @retry(
+        stop=stop_after_attempt(3),
+        wait=wait_exponential(multiplier=1, min=1, max=6),
+        # Only network/transient failures - a bad API key or invalid config
+        # raises before this point (_validate_config) or as a different
+        # exception type, so it isn't retried here.
+        retry=retry_if_exception_type((BinanceRequestException, RequestException, ConnectionError, TimeoutError)),
+        reraise=True,
+    )
+    def _connect_once(self):
+        self.client = Client(
+            self.api_key,
+            self.secret_key,
+            testnet=self.testnet
+        )
+        # Test connection and validate permissions
+        self._validate_permissions()
+
     def connect(self):
         """Initialize Binance client connection with enhanced security"""
         try:
             # Check emergency controls
             self._check_emergency_controls()
-            
+
             if not self._validate_config():
                 return False
-            
+
             logger.info(f"🔌 Connecting to Binance {'Testnet' if self.testnet else 'Mainnet'}...")
-            
-            self.client = Client(
-                self.api_key, 
-                self.secret_key,
-                testnet=self.testnet
-            )
-            
-            # Test connection and validate permissions
-            self._validate_permissions()
-            
+
+            self._connect_once()
+
             self.connected = True
             logger.info(f"✅ Connected to Binance {'Testnet' if self.testnet else 'Mainnet'}")
             return True
-            
+
         except Exception as e:
             logger.error(f"❌ Binance connection failed: {e}")
             self.connected = False

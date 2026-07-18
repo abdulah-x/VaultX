@@ -52,6 +52,12 @@ numpy==1.26.4
 pandas==2.1.4
 scipy==1.11.4
 
+# Retry/backoff for transient failures on external calls (Binance connect,
+# Gemini generate, live WS reconnect). Deliberately NOT used for order
+# placement (orders.py) — retrying a timed-out create_order call risks
+# double-execution since Binance order placement isn't idempotent.
+tenacity==8.2.3
+
 # Development & Testing
 pytest==7.4.3
 pytest-asyncio==0.21.1
