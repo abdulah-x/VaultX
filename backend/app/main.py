@@ -211,12 +211,35 @@ app.include_router(pnl_router, prefix="/api", tags=["P&L"])
 # replaces the old REST-polling simulation in realtime_prices.py — real
 # Binance WS ticks now flow to Redis Streams -> the stream-writer service ->
 # price_history/CurrentPrice.
+async def _supervised_stream_ticks():
+    """Keep the ingestion task alive forever.
+
+    stream_binance_ticks() already retries connection/stream drops internally
+    (tenacity, in live_stream.py), but anything that raises *before* that
+    retry-wrapped section (e.g. Redis unreachable at the ensure_group() call)
+    would otherwise propagate out of this asyncio task and silently end
+    ingestion for good - nothing awaits this task, so the exception would only
+    ever surface as an easy-to-miss "Task exception was never retrieved" log.
+    """
+    from data_pipeline.live_stream import stream_binance_ticks
+    while True:
+        try:
+            await stream_binance_ticks()
+            # A clean return (e.g. BINANCE_API_KEY not configured) is a
+            # deliberate no-op, not a crash - don't spin-restart it.
+            return
+        except asyncio.CancelledError:
+            raise
+        except Exception as e:
+            print(f"⚠️ Live price ingestion task crashed, restarting in 5s: {e}")
+            await asyncio.sleep(5)
+
+
 @app.on_event("startup")
 async def start_background_tasks():
     if REALTIME_PRICES_AVAILABLE:
         try:
-            from data_pipeline.live_stream import stream_binance_ticks
-            asyncio.create_task(stream_binance_ticks())
+            asyncio.create_task(_supervised_stream_ticks())
             print("✅ Live price ingestion task started")
         except Exception as e:
             print(f"⚠️ Live price ingestion failed to start: {e}")
