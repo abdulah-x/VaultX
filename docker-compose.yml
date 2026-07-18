@@ -6,9 +6,12 @@ services:
     image: timescale/timescaledb:2.17.2-pg15
     container_name: VaultX-Database
     environment:
-      POSTGRES_DB: crypto_portfolio
-      POSTGRES_USER: crypto_user
-      POSTGRES_PASSWORD: crypto_password
+      # Credentials come from the root .env (see .env.example); the :- defaults
+      # keep local dev working out of the box but let real deployments override
+      # them without editing this file.
+      POSTGRES_DB: ${POSTGRES_DB:-crypto_portfolio}
+      POSTGRES_USER: ${POSTGRES_USER:-crypto_user}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-crypto_password}
       POSTGRES_INITDB_ARGS: "-E UTF8"
       PGDATA: /var/lib/postgresql/data/pgdata
     volumes:
@@ -19,7 +22,7 @@ services:
       - vaultx_network
     restart: unless-stopped
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U crypto_user -d crypto_portfolio"]
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-crypto_user} -d ${POSTGRES_DB:-crypto_portfolio}"]
       interval: 5s
       timeout: 5s
       retries: 5
@@ -50,7 +53,7 @@ services:
       - "8001:8000"
     environment:
       - DEBUG=true
-      - DATABASE_URL=postgresql://crypto_user:crypto_password@postgres:5432/crypto_portfolio
+      - DATABASE_URL=postgresql://${POSTGRES_USER:-crypto_user}:${POSTGRES_PASSWORD:-crypto_password}@postgres:5432/${POSTGRES_DB:-crypto_portfolio}
       - REDIS_URL=redis://:${REDIS_PASSWORD:-changeme_dev_redis_password}@redis:6379/0
       - FRONTEND_URL=http://localhost:3100
       # Google OAuth
@@ -91,7 +94,7 @@ services:
     environment:
       - DEBUG=true
       - PYTHONPATH=/app/app
-      - DATABASE_URL=postgresql://crypto_user:crypto_password@postgres:5432/crypto_portfolio
+      - DATABASE_URL=postgresql://${POSTGRES_USER:-crypto_user}:${POSTGRES_PASSWORD:-crypto_password}@postgres:5432/${POSTGRES_DB:-crypto_portfolio}
       - REDIS_URL=redis://:${REDIS_PASSWORD:-changeme_dev_redis_password}@redis:6379/0
       # BINANCE_API_KEY/SECRET/TESTNET deliberately NOT listed here — docker-compose
       # substitutes those from the ROOT .env, which doesn't carry them (only
