@@ -120,23 +120,23 @@ export default function SettingsPage() {
           <div className="flex gap-6 flex-col lg:flex-row">
             {/* Sidebar Tabs */}
             <div className="lg:w-56 shrink-0">
-              <nav className="space-y-1 bg-gray-800/50 border border-gray-700/50 rounded-2xl p-3">
+              <nav className="flex flex-row lg:flex-col overflow-x-auto lg:overflow-x-visible gap-1.5 bg-gray-800/50 border border-gray-700/50 rounded-2xl p-2 sm:p-3 scrollbar-none">
                 {TABS.map(({ id, label, icon: Icon }) => (
                   <button
                     key={id}
                     onClick={() => setActiveTab(id)}
-                    className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-medium transition-all ${
+                    className={`flex items-center gap-2 sm:gap-3 px-3.5 py-2 sm:py-2.5 rounded-xl text-xs sm:text-sm font-medium transition-all shrink-0 lg:w-full ${
                       activeTab === id
                         ? "bg-cyan-600 text-white"
                         : "text-gray-400 hover:text-white hover:bg-gray-700/50"
                     }`}
                   >
                     <Icon className="w-4 h-4" />
-                    {label}
-                    <ChevronRight className={`w-3 h-3 ml-auto transition-opacity ${activeTab === id ? "opacity-100" : "opacity-0"}`} />
+                    <span>{label}</span>
+                    <ChevronRight className={`hidden lg:block w-3 h-3 ml-auto transition-opacity ${activeTab === id ? "opacity-100" : "opacity-0"}`} />
                   </button>
                 ))}
-                <div className="pt-2 border-t border-gray-700/50 mt-2">
+                <div className="hidden lg:block pt-2 border-t border-gray-700/50 mt-2">
                   <button
                     onClick={logout}
                     className="w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-medium text-red-400 hover:text-white hover:bg-red-600/20 transition-all"
@@ -145,6 +145,13 @@ export default function SettingsPage() {
                     Sign Out
                   </button>
                 </div>
+                <button
+                  onClick={logout}
+                  className="lg:hidden flex items-center gap-2 px-3.5 py-2 rounded-xl text-xs font-medium text-red-400 hover:text-white hover:bg-red-600/20 transition-all shrink-0"
+                >
+                  <LogOut className="w-4 h-4" />
+                  <span>Sign Out</span>
+                </button>
               </nav>
             </div>
 
