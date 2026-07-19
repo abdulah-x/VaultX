@@ -21,7 +21,7 @@ export default function PageTransition({ children }: { children: ReactNode }) {
         initial="hidden"
         animate="enter"
         exit="exit"
-        transition={{ duration: 0.22, ease: "easeOut" }}
+        transition={{ duration: 0.22, ease: "easeOut" as const }}
         style={{ minHeight: "100%" }}
       >
         {children}
