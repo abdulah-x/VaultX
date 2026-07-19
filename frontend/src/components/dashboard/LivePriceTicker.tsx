@@ -67,7 +67,8 @@ export default function LivePriceTicker() {
 
   useEffect(() => {
     fetchPrices();
-    const interval = setInterval(fetchPrices, 15000); // refresh every 15s
+    // Refresh prices every 15 seconds to ensure accuracy while avoiding rate limits
+    const interval = setInterval(fetchPrices, 15000); 
     return () => clearInterval(interval);
   }, []);
 
