@@ -120,6 +120,18 @@ export const api = {
       const response = await axiosInstance.get('/api/portfolio/performance');
       return response.data;
     },
+    optimize: async () => {
+      const response = await axiosInstance.get('/api/portfolio/optimize');
+      return response.data;
+    },
+  },
+
+  // AI Advisor endpoints
+  advisor: {
+    chat: async (message: string) => {
+      const response = await axiosInstance.post('/api/advisor/chat', { message });
+      return response.data;
+    },
   },
 
   // Trades endpoints
