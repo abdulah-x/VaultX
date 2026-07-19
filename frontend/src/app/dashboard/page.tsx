@@ -6,10 +6,11 @@ import { api } from "@/lib/api";
 import ProtectedRoute from "@/components/auth/ProtectedRoute";
 import AppLayout from "@/components/layout/AppLayout";
 import MetricCard from "@/components/ui/MetricCard";
+import PerformanceChart from "@/components/dashboard/PerformanceChart";
+import HoldingsTable from "@/components/dashboard/HoldingsTable";
 import PortfolioOverview from "@/components/dashboard/PortfolioOverview";
 import PortfolioHeatmap from "@/components/dashboard/PortfolioHeatmap";
-import HoldingsTable from "@/components/dashboard/HoldingsTable";
-import PerformanceChart from "@/components/dashboard/PerformanceChart";
+import LivePriceTicker from "@/components/dashboard/LivePriceTicker";
 import {
   DollarSign,
   TrendingUp,
@@ -252,6 +253,9 @@ export default function DashboardPage() {
   return (
     <ProtectedRoute>
       <AppLayout>
+        {/* Live price ticker strip */}
+        <LivePriceTicker />
+
         <div className="p-6 space-y-6">
           {/* Backend Status Banner */}
           {portfolioData && !backendDataLoading && (
