@@ -4,6 +4,7 @@ import { motion, AnimatePresence } from "framer-motion";
 import { usePathname } from "next/navigation";
 import { ReactNode } from "react";
 
+// Custom animation variants for route-based page entry and exit
 const variants = {
   hidden:  { opacity: 0, y: 12 },
   enter:   { opacity: 1, y: 0 },
