@@ -1,3 +1,6 @@
+"use client";
+
+import { motion } from "framer-motion";
 import { MoreHorizontal, ArrowUpRight, ArrowDownRight, TrendingUp, TrendingDown } from 'lucide-react';
 
 interface HoldingData {
@@ -19,6 +22,21 @@ interface HoldingsTableProps {
   holdings: HoldingData[];
   totalValue: number;
 }
+
+const tableVariants = {
+  hidden: { opacity: 0 },
+  show: {
+    opacity: 1,
+    transition: {
+      staggerChildren: 0.05
+    }
+  }
+};
+
+const rowVariants = {
+  hidden: { opacity: 0, y: 12 },
+  show: { opacity: 1, y: 0, transition: { type: "spring" as const, stiffness: 350, damping: 25 } }
+};
 
 export default function HoldingsTable({ holdings, totalValue }: HoldingsTableProps) {
   const formatCurrency = (value: number) => {
@@ -42,13 +60,22 @@ export default function HoldingsTable({ holdings, totalValue }: HoldingsTablePro
   };
 
   return (
-    <div className="bg-gray-900/50 backdrop-blur-sm border border-gray-800 rounded-xl">
+    <motion.div 
+      initial={{ opacity: 0, y: 20 }}
+      animate={{ opacity: 1, y: 0 }}
+      transition={{ duration: 0.5, ease: "easeOut" }}
+      className="bg-gray-900/50 backdrop-blur-sm border border-gray-800 rounded-xl overflow-hidden"
+    >
       <div className="p-6 border-b border-gray-800">
         <div className="flex items-center justify-between">
           <h3 className="text-lg font-bold text-white">ASSET HOLDINGS</h3>
-          <button className="text-gray-400 hover:text-white hover:bg-gray-800/50 transition-all duration-200 p-2 rounded-lg">
+          <motion.button 
+            whileHover={{ scale: 1.05 }}
+            whileTap={{ scale: 0.95 }}
+            className="text-gray-400 hover:text-white hover:bg-gray-800/50 transition-colors p-2 rounded-lg"
+          >
             <MoreHorizontal className="w-5 h-5" />
-          </button>
+          </motion.button>
         </div>
       </div>
 
@@ -82,20 +109,29 @@ export default function HoldingsTable({ holdings, totalValue }: HoldingsTablePro
               </th>
             </tr>
           </thead>
-          <tbody className="divide-y divide-gray-800">
+          <motion.tbody 
+            variants={tableVariants}
+            initial="hidden"
+            animate="show"
+            className="divide-y divide-gray-800"
+          >
             {holdings.map((holding) => (
-              <tr 
-                key={holding.id} 
-                className="hover:bg-gray-800/50 hover:shadow-lg cursor-pointer transition-all duration-200 group border-l-4 border-transparent hover:border-cyan-500/50"
+              <motion.tr 
+                key={holding.id}
+                variants={rowVariants}
+                className="hover:bg-gray-800/50 hover:shadow-lg cursor-pointer transition-colors duration-200 group border-l-4 border-transparent hover:border-cyan-500/50"
                 onClick={() => {/* TODO: Navigate to asset detail page */}}
               >
                 <td className="px-6 py-4 whitespace-nowrap">
                   <div className="flex items-center gap-3">
-                    <div className="w-8 h-8 bg-gradient-to-br from-orange-500 to-yellow-500 rounded-full flex items-center justify-center">
+                    <motion.div 
+                      whileHover={{ scale: 1.1, rotate: 10 }}
+                      className="w-8 h-8 bg-gradient-to-br from-orange-500 to-yellow-500 rounded-full flex items-center justify-center shadow"
+                    >
                       <span className="text-xs font-bold text-white">
                         {holding.symbol.slice(0, 1)}
                       </span>
-                    </div>
+                    </motion.div>
                     <div>
                       <div className="text-sm font-medium text-white">{holding.asset}</div>
                       <div className="text-xs text-gray-400">{holding.symbol}</div>
@@ -103,22 +139,22 @@ export default function HoldingsTable({ holdings, totalValue }: HoldingsTablePro
                   </div>
                 </td>
                 <td className="px-6 py-4 whitespace-nowrap text-right">
-                  <div className="text-sm font-medium text-white">
+                  <div className="text-sm font-medium text-white font-mono">
                     {formatNumber(holding.qty)}
                   </div>
                 </td>
                 <td className="px-6 py-4 whitespace-nowrap text-right">
-                  <div className="text-sm font-medium text-white">
+                  <div className="text-sm font-medium text-white font-mono">
                     {formatCurrency(holding.avgBuyPrice)}
                   </div>
                 </td>
                 <td className="px-6 py-4 whitespace-nowrap text-right">
-                  <div className="text-sm font-medium text-white">
+                  <div className="text-sm font-medium text-white font-mono">
                     {formatCurrency(holding.lastPrice)}
                   </div>
                 </td>
                 <td className="px-6 py-4 whitespace-nowrap text-right">
-                  <div className="text-sm font-medium text-white">
+                  <div className="text-sm font-medium text-white font-mono">
                     {formatCurrency(holding.marketValue)}
                   </div>
                   <div className="text-xs text-gray-400">
@@ -142,7 +178,7 @@ export default function HoldingsTable({ holdings, totalValue }: HoldingsTablePro
                     {formatPercentage(((holding.lastPrice - holding.avgBuyPrice) / holding.avgBuyPrice) * 100)}
                   </div>
                 </td>
-                <td className="px-6 py-4 whitespace-nowrap text-right">
+                <td className="px-6 py-4 whitespace-nowrap text-right font-mono">
                   <div className={`text-sm font-medium flex items-center justify-end gap-1 ${
                     holding.change24h >= 0 ? 'text-emerald-400' : 'text-red-400'
                   }`}>
@@ -155,21 +191,23 @@ export default function HoldingsTable({ holdings, totalValue }: HoldingsTablePro
                   </div>
                 </td>
                 <td className="px-6 py-4 whitespace-nowrap text-right">
-                  <div className="w-16 bg-gray-800 rounded-full h-2">
-                    <div 
+                  <div className="w-16 bg-gray-800 rounded-full h-2 overflow-hidden ml-auto">
+                    <motion.div 
+                      initial={{ width: 0 }}
+                      animate={{ width: `${holding.allocation}%` }}
+                      transition={{ duration: 0.6, ease: "easeOut" }}
                       className="bg-gradient-to-r from-cyan-500 to-blue-500 h-2 rounded-full"
-                      style={{ width: `${holding.allocation}%` }}
                     />
                   </div>
                   <div className="text-xs text-gray-400 mt-1">
                     {holding.allocation.toFixed(1)}%
                   </div>
                 </td>
-              </tr>
+              </motion.tr>
             ))}
-          </tbody>
+          </motion.tbody>
         </table>
       </div>
-    </div>
+    </motion.div>
   );
 }
