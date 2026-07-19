@@ -29,13 +29,13 @@ interface AppLayoutProps {
 
 // ── Animation variants ────────────────────────────────────────────────────
 const sidebarVariants = {
-  open:   { x: 0,    opacity: 1, transition: { type: "spring", stiffness: 300, damping: 30 } },
-  closed: { x: -280, opacity: 0, transition: { type: "spring", stiffness: 300, damping: 30 } },
+  open:   { x: 0,    opacity: 1, transition: { type: "spring" as const, stiffness: 300, damping: 30 } },
+  closed: { x: -280, opacity: 0, transition: { type: "spring" as const, stiffness: 300, damping: 30 } },
 };
 
 const dropdownVariants = {
   hidden: { opacity: 0, scale: 0.95, y: -8 },
-  visible: { opacity: 1, scale: 1, y: 0, transition: { duration: 0.15, ease: "easeOut" } },
+  visible: { opacity: 1, scale: 1, y: 0, transition: { duration: 0.15, ease: "easeOut" as const } },
   exit:   { opacity: 0, scale: 0.95, y: -8, transition: { duration: 0.1 } },
 };
 
@@ -44,7 +44,7 @@ const navItemVariants = {
   visible: (i: number) => ({
     opacity: 1,
     x: 0,
-    transition: { delay: i * 0.05, duration: 0.25, ease: "easeOut" },
+    transition: { delay: i * 0.05, duration: 0.25, ease: "easeOut" as const },
   }),
 };
 
