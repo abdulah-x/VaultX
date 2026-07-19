@@ -100,16 +100,16 @@ export default function PerformanceChart({
 
   return (
     <div className="bg-gradient-to-br from-gray-900/60 to-gray-800/40 backdrop-blur-sm border border-gray-700/50 rounded-2xl p-6 shadow-2xl">
-      <div className="flex items-center justify-between mb-6">
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-6">
         <h3 className="text-lg font-bold text-white uppercase tracking-wider">Portfolio Growth Over Time</h3>
         
         {/* Timeframe Selector */}
-        <div className="flex items-center gap-1 bg-gray-800/60 rounded-xl p-1.5 border border-gray-600/50 shadow-lg">
+        <div className="flex items-center gap-1 bg-gray-800/60 rounded-xl p-1 sm:p-1.5 border border-gray-600/50 shadow-lg overflow-x-auto">
           {timeframes.map((tf) => (
             <button
               key={tf}
               onClick={() => handleTimeframeChange(tf)}
-              className={`px-4 py-2.5 text-sm font-bold rounded-lg transition-all duration-200 ${
+              className={`px-2 py-1.5 sm:px-4 sm:py-2.5 text-xs sm:text-sm font-bold rounded-lg transition-all duration-200 ${
                 currentTimeframe === tf
                   ? 'bg-gradient-to-r from-cyan-500 to-blue-500 text-white shadow-lg shadow-cyan-500/30 scale-105'
                   : 'text-gray-400 hover:text-white hover:bg-gray-700/60 hover:scale-105'
@@ -244,8 +244,8 @@ export default function PerformanceChart({
       </div>
 
       {/* Enhanced Legend and Stats */}
-      <div className="flex items-center justify-between mt-6 pt-4 border-t border-gray-700/50">
-        <div className="flex items-center gap-6">
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mt-6 pt-4 border-t border-gray-700/50">
+        <div className="flex flex-wrap items-center gap-4 sm:gap-6">
           <div className="flex items-center gap-3 group cursor-pointer">
             <div className="relative">
               <div className="w-4 h-4 bg-cyan-400 rounded-full shadow-lg shadow-cyan-400/30 group-hover:shadow-cyan-400/50 transition-shadow" />
@@ -269,7 +269,7 @@ export default function PerformanceChart({
           </div>
         </div>
 
-        <div className="text-right">
+        <div className="text-left sm:text-right">
           <div className="text-sm font-medium text-gray-400 mb-1">Period Growth</div>
           <div className={`text-xl font-bold tracking-tight flex items-center gap-2 ${
             periodGrowth >= 0 ? 'text-emerald-400' : 'text-red-400'
