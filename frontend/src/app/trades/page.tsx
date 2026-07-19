@@ -264,7 +264,7 @@ export default function TradesPage() {
 
             {/* Pagination */}
             {totalPages > 1 && (
-              <div className="px-6 py-4 border-t border-gray-700/30 flex justify-between items-center">
+              <div className="px-6 py-4 border-t border-gray-700/30 flex flex-col sm:flex-row gap-4 items-center justify-between">
                 <button
                   onClick={() => setPage(p => Math.max(1, p - 1))}
                   disabled={page === 1}
