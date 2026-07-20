@@ -13,7 +13,8 @@ from core.dependencies import get_db, get_current_active_user
 from core.errors import DatabaseError, ValidationError
 from core.audit import log_audit_event
 from core.decimal_utils import stringify_decimals
-from database.models import User, Trade
+from services.analytics.trade_stats import average_holding_times
+from database.models import User, Trade, Asset, CurrentPrice
 from services.binance.client import BinanceClientManager, run_sync
 from api.portfolio_sync import get_or_create_asset
 
@@ -166,6 +167,7 @@ class TradeHistoryImporter:
                     "quote_quantity": Decimal(str(trade.get('quoteQty', '0'))),
                     "commission": Decimal(str(trade.get('commission', '0'))),
                     "commission_asset": trade.get('commissionAsset', ''),
+                    "is_maker": trade.get('isMaker'),
                     "executed_at": datetime.fromtimestamp(trade.get('time', 0) / 1000),
                 }
                 processed.append(processed_trade)
@@ -205,6 +207,7 @@ class TradeHistoryImporter:
                         existing.quote_quantity = trade_data['quote_quantity']
                         existing.commission = trade_data['commission']
                         existing.commission_asset = trade_data['commission_asset']
+                        existing.is_maker = trade_data.get('is_maker')
                         updated_count += 1
                     else:
                         skipped_count += 1
@@ -228,6 +231,7 @@ class TradeHistoryImporter:
                         quote_quantity=trade_data['quote_quantity'],
                         commission=trade_data['commission'],
                         commission_asset=trade_data['commission_asset'],
+                        is_maker=trade_data.get('is_maker'),
                         executed_at=trade_data['executed_at'],
                     )
                     db.add(new_trade)
@@ -364,6 +368,9 @@ async def get_trade_analysis(
 
         analysis["daily_volume"] = daily_volumes
 
+        # Average holding time (FIFO buy->sell matching over the trades in range).
+        analysis["holding_time"] = average_holding_times(trades)
+
         return stringify_decimals({
             "success": True,
             "analysis": analysis,
@@ -377,6 +384,111 @@ async def get_trade_analysis(
 
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Analysis failed: {str(e)}")
+
+
+@router.get("/trades/fees", response_model=Dict[str, Any])
+async def get_fee_breakdown(
+    days: int = Query(365, ge=1, le=3650, description="Look-back window in days"),
+    current_user: User = Depends(get_current_active_user),
+    db: Session = Depends(get_db)
+):
+    """
+    Spot fee breakdown: total fees, maker-vs-taker split, fees grouped by the
+    asset they were paid in, and an estimated saving from paying fees in BNB.
+
+    Fee amounts are stored in whatever asset the fee was charged in
+    (`commission_asset`); USD values use the CurrentPrice table (stablecoins = $1).
+    A trade with no maker/taker flag (order-endpoint fills, legacy rows) lands in
+    an `unknown` bucket rather than skewing maker/taker.
+    """
+    try:
+        start_date = datetime.utcnow() - timedelta(days=days)
+        trades = (
+            db.query(Trade)
+            .filter(Trade.user_id == current_user.id, Trade.executed_at >= start_date)
+            .all()
+        )
+        if not trades:
+            return {"success": True, "message": "No trades in range", "fees": {}}
+
+        # USD price for each commission asset (stablecoins handled separately).
+        commission_assets = {t.commission_asset for t in trades if t.commission_asset}
+        price_by_symbol = {}
+        if commission_assets:
+            rows = (
+                db.query(Asset.symbol, CurrentPrice.price_usd)
+                .join(CurrentPrice, Asset.id == CurrentPrice.asset_id)
+                .filter(Asset.symbol.in_(commission_assets))
+                .all()
+            )
+            price_by_symbol = {sym: price for sym, price in rows}
+
+        STABLES = {'USDT', 'USDC', 'BUSD', 'DAI', 'TUSD', 'USDP'}
+
+        def fee_usd(commission, asset):
+            if commission is None:
+                return None
+            if asset in STABLES:
+                return commission
+            price = price_by_symbol.get(asset)
+            return (commission * price) if price is not None else None
+
+        maker_usd = Decimal('0')
+        taker_usd = Decimal('0')
+        unknown_usd = Decimal('0')
+        total_usd = Decimal('0')
+        bnb_fees_usd = Decimal('0')
+        by_asset = {}
+        unpriced_assets = set()
+
+        for t in trades:
+            comm = t.commission or Decimal('0')
+            if comm == 0:
+                continue
+            asset = t.commission_asset or 'UNKNOWN'
+            entry = by_asset.setdefault(asset, {"amount": Decimal('0'), "usd_value": Decimal('0'), "count": 0})
+            entry["amount"] += comm
+            entry["count"] += 1
+
+            usd = fee_usd(comm, asset)
+            if usd is None:
+                unpriced_assets.add(asset)
+                continue
+            entry["usd_value"] += usd
+            total_usd += usd
+            if t.is_maker is True:
+                maker_usd += usd
+            elif t.is_maker is False:
+                taker_usd += usd
+            else:
+                unknown_usd += usd
+            if asset == 'BNB':
+                bnb_fees_usd += usd
+
+        # Binance discounts spot fees ~25% when paid in BNB. You paid ~75% of the
+        # undiscounted fee, so the saving is 0.25/0.75 of what you actually paid.
+        bnb_savings_usd = bnb_fees_usd * (Decimal('0.25') / Decimal('0.75'))
+
+        return stringify_decimals({
+            "success": True,
+            "period": {"days": days, "start_date": start_date.isoformat()},
+            "fees": {
+                "total_usd": total_usd,
+                "maker_usd": maker_usd,
+                "taker_usd": taker_usd,
+                "unknown_maker_taker_usd": unknown_usd,
+                "by_asset": by_asset,
+                "bnb": {
+                    "fees_paid_usd": bnb_fees_usd,
+                    "estimated_savings_usd": bnb_savings_usd,
+                    "note": "Estimated ~25% BNB fee discount vs paying in the quote asset.",
+                },
+                "unpriced_assets": sorted(unpriced_assets),
+            },
+        })
+
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Fee breakdown failed: {str(e)}")
 
 @router.get("/trades/import/status", response_model=Dict[str, Any])
 async def get_import_status(

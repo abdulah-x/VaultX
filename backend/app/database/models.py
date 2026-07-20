@@ -161,7 +161,8 @@ class Trade(Base):
     # Fees
     commission = Column(DECIMAL(20, 8), default=0)
     commission_asset = Column(String(10))
-    
+    is_maker = Column(Boolean, nullable=True)  # True=maker, False=taker, None=unknown (order-endpoint/legacy rows)
+
     # Status
     status = Column(String(20), default='FILLED')
     
