@@ -12,18 +12,14 @@ from collections import defaultdict
 
 from core.dependencies import get_db, get_current_active_user
 from core.decimal_utils import stringify_decimals
-from database.models import User, Holding, Trade, Asset
-from services.binance.client import BinanceClientManager, run_sync
+from database.models import User, Holding, Trade, Asset, CurrentPrice
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
 
 class AdvancedPnLCalculator:
     """Advanced P&L calculation with real-time data"""
-    
-    def __init__(self):
-        self.client_manager = BinanceClientManager()
-    
+
     async def calculate_comprehensive_pnl(
         self,
         user_id: int,
@@ -77,7 +73,7 @@ class AdvancedPnLCalculator:
                 }
             
             # Get current prices
-            current_prices = await self._get_current_prices(portfolios)
+            current_prices = self._get_current_prices(portfolios, db)
             
             # Calculate P&L using different methods
             pnl_results = {
@@ -110,38 +106,35 @@ class AdvancedPnLCalculator:
                 "error": "calculation_failed"
             }
     
-    async def _get_current_prices(self, portfolios: List[Holding]) -> Dict[str, float]:
-        """Get current prices for all portfolio assets"""
-        prices = {}
-        client = await run_sync(self.client_manager.get_client)
+    def _get_current_prices(self, portfolios: List[Holding], db: Session) -> Dict[str, float]:
+        """Get current prices (keyed by base asset symbol) for the given holdings.
 
-        if not client:
-            logger.warning("⚠️ Binance client not available for price fetching")
+        Reads from the CurrentPrice table, which the Phase 6 stream-writer keeps
+        continuously updated — the same source pnl.py/portfolio.py already use.
+        This deliberately avoids the old live Binance get_all_tickers call, which
+        pulled ~2000+ tickers per request to use ~5 and made this endpoint depend
+        on Binance being reachable for a purely internal P&L read.
+        """
+        prices: Dict[str, float] = {}
+        if not portfolios:
             return prices
 
-        try:
-            # Get all tickers at once (blocking call offloaded to a thread)
-            all_tickers = await run_sync(client.get_all_tickers)
-            ticker_dict = {ticker['symbol']: float(ticker['price']) for ticker in all_tickers}
-            
-            for portfolio in portfolios:
-                asset = portfolio.symbol
-                
-                # Try different trading pairs
-                potential_symbols = [f"{asset}USDT", f"{asset}BUSD", f"{asset}BTC", f"{asset}ETH"]
-                
-                for symbol in potential_symbols:
-                    if symbol in ticker_dict:
-                        prices[asset] = ticker_dict[symbol]
-                        break
-                
-                # For stablecoins
-                if asset in ['USDT', 'USDC', 'BUSD', 'DAI', 'TUSD', 'USDP']:
-                    prices[asset] = 1.0
-                    
-        except Exception as e:
-            logger.warning(f"⚠️ Failed to get current prices: {e}")
-        
+        symbol_by_asset_id = {p.asset_id: p.symbol for p in portfolios}
+        rows = (
+            db.query(CurrentPrice.asset_id, CurrentPrice.price_usd)
+            .filter(CurrentPrice.asset_id.in_(list(symbol_by_asset_id.keys())))
+            .all()
+        )
+        for asset_id, price_usd in rows:
+            symbol = symbol_by_asset_id.get(asset_id)
+            if symbol and price_usd is not None:
+                prices[symbol] = float(price_usd)
+
+        # Stablecoins are $1 even if there's no CurrentPrice row for them.
+        for symbol in symbol_by_asset_id.values():
+            if symbol in ['USDT', 'USDC', 'BUSD', 'DAI', 'TUSD', 'USDP'] and symbol not in prices:
+                prices[symbol] = 1.0
+
         return prices
     
     async def _calculate_portfolio_pnl(self, portfolios: List[Holding], current_prices: Dict[str, float]) -> Dict[str, Any]:
