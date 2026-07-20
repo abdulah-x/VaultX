@@ -7,14 +7,15 @@ Summary of holdings and portfolio overview
 from fastapi import APIRouter, HTTPException, Depends
 from typing import List, Dict, Any, Optional
 from decimal import Decimal
-from datetime import datetime
+from datetime import datetime, timedelta, timezone
 import sys
 from pathlib import Path
 
 # Add database to path
 sys.path.append(str(Path(__file__).parent.parent))
 
-from database import SessionLocal, User, Asset, Holding, CurrentPrice
+from sqlalchemy import func
+from database import SessionLocal, User, Asset, Holding, CurrentPrice, Trade, PriceHistory
 from core.dependencies import get_db, get_current_active_user, get_optional_current_user
 from core.errors import NotFoundError, ValidationError, DatabaseError
 from core.decimal_utils import stringify_decimals
@@ -264,3 +265,106 @@ async def get_portfolio_performance(
         
     except Exception as e:
         raise DatabaseError(f"Error fetching portfolio performance: {str(e)}")
+
+@router.get("/portfolio/kpis", response_model=Dict[str, Any])
+async def get_portfolio_kpis(
+    current_user: User = Depends(get_current_active_user),
+    db = Depends(get_db)
+):
+    """
+    Header KPI strip for the portfolio dashboard — one call the frontend binds
+    the whole top-of-page card row to.
+
+    Returns:
+    - portfolio_value_usd: current market value of held positions (qty x live price)
+    - invested_usd: cost basis of those held positions
+    - capital_gain: total gain (realized + unrealized) in USD and %, the
+      unrealized/realized split, and the 24h ("today") change in USD and %.
+
+    Definitions (crypto-appropriate; no IRR, no dividends):
+    - unrealized = current value - cost basis of current holdings
+    - realized   = sum of Trade.realized_pnl_usd across the user's closed/partial sells
+    - total gain = unrealized + realized; percent is total gain / cost basis
+    - today's change compares current value to the value of the SAME current
+      holdings priced at their close ~24h ago (from the price_history hypertable),
+      i.e. a pure price move on today's positions.
+    """
+    try:
+        rows = (
+            db.query(Holding, Asset, CurrentPrice)
+            .join(Asset, Holding.asset_id == Asset.id)
+            .outerjoin(CurrentPrice, Asset.id == CurrentPrice.asset_id)
+            .filter(Holding.user_id == current_user.id)
+            .filter(Holding.total_quantity > 0)
+            .all()
+        )
+
+        total_value = Decimal('0')
+        total_cost = Decimal('0')
+        qty_by_asset: Dict[int, Decimal] = {}
+        current_price_by_asset: Dict[int, Decimal] = {}
+
+        for holding, asset, current_price in rows:
+            price = current_price.price_usd if (current_price and current_price.price_usd is not None) else Decimal('0')
+            qty = holding.total_quantity or Decimal('0')
+            total_value += qty * price
+            total_cost += holding.total_cost_usd or Decimal('0')
+            qty_by_asset[asset.id] = qty
+            current_price_by_asset[asset.id] = price
+
+        unrealized = total_value - total_cost
+
+        # Realized P&L across all of this user's sells (same source pnl.py uses).
+        realized_raw = (
+            db.query(func.coalesce(func.sum(Trade.realized_pnl_usd), 0))
+            .filter(Trade.user_id == current_user.id, Trade.realized_pnl_usd.isnot(None))
+            .scalar()
+        )
+        realized = Decimal(str(realized_raw)) if realized_raw is not None else Decimal('0')
+
+        capital_gain_total = unrealized + realized
+        capital_gain_pct = (capital_gain_total / total_cost * 100) if total_cost > 0 else Decimal('0')
+
+        # Today's change: value of the SAME holdings priced ~24h ago, from
+        # price_history (last close at or before the 24h cutoff, per asset).
+        value_24h_ago = Decimal('0')
+        asset_ids = list(qty_by_asset.keys())
+        if asset_ids:
+            cutoff = datetime.now(timezone.utc) - timedelta(hours=24)
+            prior_rows = (
+                db.query(PriceHistory.asset_id, PriceHistory.price_usd)
+                .filter(PriceHistory.asset_id.in_(asset_ids), PriceHistory.timestamp <= cutoff)
+                .order_by(PriceHistory.asset_id, PriceHistory.timestamp.desc())
+                .distinct(PriceHistory.asset_id)
+                .all()
+            )
+            prior_price = {asset_id: price for asset_id, price in prior_rows}
+            for asset_id, qty in qty_by_asset.items():
+                # No 24h-ago history for this asset -> fall back to its current
+                # price so it contributes 0 to the change rather than skewing it.
+                price = prior_price.get(asset_id) or current_price_by_asset.get(asset_id) or Decimal('0')
+                value_24h_ago += qty * price
+
+        today_usd = (total_value - value_24h_ago) if value_24h_ago > 0 else Decimal('0')
+        today_pct = (today_usd / value_24h_ago * 100) if value_24h_ago > 0 else Decimal('0')
+
+        return stringify_decimals({
+            "success": True,
+            "user_id": current_user.id,
+            "timestamp": datetime.utcnow().isoformat(),
+            "kpis": {
+                "portfolio_value_usd": total_value,
+                "invested_usd": total_cost,
+                "capital_gain": {
+                    "total_usd": capital_gain_total,
+                    "total_percent": capital_gain_pct,
+                    "unrealized_usd": unrealized,
+                    "realized_usd": realized,
+                    "today_usd": today_usd,
+                    "today_percent": today_pct,
+                },
+            },
+        })
+
+    except Exception as e:
+        raise DatabaseError(f"Error building portfolio KPIs: {str(e)}")
