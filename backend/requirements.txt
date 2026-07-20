@@ -58,6 +58,9 @@ scipy==1.11.4
 # double-execution since Binance order placement isn't idempotent.
 tenacity==8.2.3
 
+# PDF generation for tax/audit exports (CSV uses the stdlib csv module).
+fpdf2==2.7.9
+
 # Development & Testing
 pytest==7.4.3
 pytest-asyncio==0.21.1
