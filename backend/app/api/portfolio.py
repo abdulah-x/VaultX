@@ -19,6 +19,7 @@ from database import SessionLocal, User, Asset, Holding, CurrentPrice, Trade, Pr
 from core.dependencies import get_db, get_current_active_user, get_optional_current_user
 from core.errors import NotFoundError, ValidationError, DatabaseError
 from core.decimal_utils import stringify_decimals
+from services.analytics.irr import annualized_xirr
 from pydantic import BaseModel
 
 router = APIRouter()
@@ -303,14 +304,40 @@ async def get_portfolio_kpis(
         total_cost = Decimal('0')
         qty_by_asset: Dict[int, Decimal] = {}
         current_price_by_asset: Dict[int, Decimal] = {}
+        holdings_list = []
 
         for holding, asset, current_price in rows:
             price = current_price.price_usd if (current_price and current_price.price_usd is not None) else Decimal('0')
             qty = holding.total_quantity or Decimal('0')
-            total_value += qty * price
-            total_cost += holding.total_cost_usd or Decimal('0')
+            cost_basis = holding.total_cost_usd or Decimal('0')
+            value = qty * price
+            asset_unrealized = value - cost_basis
+            asset_unrealized_pct = (asset_unrealized / cost_basis * 100) if cost_basis > 0 else Decimal('0')
+
+            total_value += value
+            total_cost += cost_basis
             qty_by_asset[asset.id] = qty
             current_price_by_asset[asset.id] = price
+
+            holdings_list.append({
+                "asset_symbol": asset.symbol,
+                "asset_name": asset.name,
+                "quantity": qty,
+                "average_cost_usd": holding.average_cost_usd or Decimal('0'),
+                "current_price_usd": price,
+                "cost_basis_usd": cost_basis,
+                "current_value_usd": value,
+                "unrealized_pnl_usd": asset_unrealized,
+                "unrealized_pnl_percent": asset_unrealized_pct,
+                "allocation_percent": Decimal('0'),  # filled in once total_value is known
+            })
+
+        # Allocation is each position's share of current portfolio value; sort
+        # biggest-first so the frontend holdings table renders in a sane order.
+        for item in holdings_list:
+            if total_value > 0:
+                item["allocation_percent"] = item["current_value_usd"] / total_value * 100
+        holdings_list.sort(key=lambda h: h["current_value_usd"], reverse=True)
 
         unrealized = total_value - total_cost
 
@@ -348,6 +375,34 @@ async def get_portfolio_kpis(
         today_usd = (total_value - value_24h_ago) if value_24h_ago > 0 else Decimal('0')
         today_pct = (today_usd / value_24h_ago * 100) if value_24h_ago > 0 else Decimal('0')
 
+        # Growth Rate (IRR): money-weighted annualized return. Each trade is a
+        # dated cash flow — a BUY is money out (negative), a SELL is money in
+        # (positive) — and the current portfolio value is a final synthetic
+        # inflow at "today". quote_quantity is the quote-asset amount, which is
+        # USD for the USDT-quoted pairs VaultX records. Returns null when it
+        # can't be solved (e.g. no trades, or zero current value).
+        irr_percent = None
+        if total_value > 0:
+            trade_rows = (
+                db.query(Trade.side, Trade.quote_quantity, Trade.executed_at)
+                .filter(Trade.user_id == current_user.id)
+                .order_by(Trade.executed_at)
+                .all()
+            )
+            cashflows = []
+            for side, quote_qty, executed_at in trade_rows:
+                if quote_qty is None or executed_at is None:
+                    continue
+                amount = float(quote_qty)
+                if side == "BUY":
+                    cashflows.append((executed_at, -amount))
+                elif side == "SELL":
+                    cashflows.append((executed_at, amount))
+            cashflows.append((datetime.utcnow(), float(total_value)))
+            irr = annualized_xirr(cashflows)
+            if irr is not None:
+                irr_percent = Decimal(str(round(irr * 100, 4)))
+
         return stringify_decimals({
             "success": True,
             "user_id": current_user.id,
@@ -363,7 +418,12 @@ async def get_portfolio_kpis(
                     "today_usd": today_usd,
                     "today_percent": today_pct,
                 },
+                "growth_rate": {
+                    # Annualized money-weighted return (XIRR); null if not computable.
+                    "irr_percent": irr_percent,
+                },
             },
+            "holdings": holdings_list,
         })
 
     except Exception as e:
