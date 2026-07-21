@@ -135,6 +135,13 @@ except ImportError as e:
     ORDERS_AVAILABLE = False
 
 try:
+    from api.exports import router as exports_router
+    EXPORTS_AVAILABLE = True
+except ImportError as e:
+    print(f"⚠️ Exports routes import failed: {e}")
+    EXPORTS_AVAILABLE = False
+
+try:
     from api.portfolio_analytics import router as portfolio_analytics_router
     PORTFOLIO_ANALYTICS_AVAILABLE = True
 except ImportError as e:
@@ -188,6 +195,9 @@ if MARKET_DATA_AVAILABLE:
 
 if ORDERS_AVAILABLE:
     app.include_router(orders_router, prefix="/api", tags=["Orders"])
+
+if EXPORTS_AVAILABLE:
+    app.include_router(exports_router, prefix="/api", tags=["Exports"])
     print("✅ Orders routes registered")
 
 if PORTFOLIO_ANALYTICS_AVAILABLE:
@@ -313,6 +323,10 @@ async def health_check():
             "available": ORDERS_AVAILABLE,
             "status": "healthy" if ORDERS_AVAILABLE else "unavailable"
         },
+        "exports": {
+            "available": EXPORTS_AVAILABLE,
+            "status": "healthy" if EXPORTS_AVAILABLE else "unavailable"
+        },
         "portfolio_analytics": {
             "available": PORTFOLIO_ANALYTICS_AVAILABLE,
             "status": "healthy" if PORTFOLIO_ANALYTICS_AVAILABLE else "unavailable"
@@ -436,6 +450,7 @@ async def api_info():
     if MARKET_DATA_AVAILABLE:
         advanced_endpoints["market_data"] = {
             "orderbook": "/api/market/orderbook/{symbol}",
+            "volume_profile": "/api/market/volume-profile/{symbol}",
             "klines": "/api/market/klines/{symbol}",
             "ticker": "/api/market/ticker/{symbol}"
         }
@@ -445,6 +460,12 @@ async def api_info():
             "place": "/api/orders",
             "open": "/api/orders/open",
             "history": "/api/orders/history"
+        }
+
+    if EXPORTS_AVAILABLE:
+        advanced_endpoints["exports"] = {
+            "transactions": "/api/export/transactions",
+            "tax": "/api/export/tax"
         }
 
     if PORTFOLIO_ANALYTICS_AVAILABLE:
