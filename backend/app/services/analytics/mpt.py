@@ -29,13 +29,12 @@ TRADING_DAYS_PER_YEAR = 252
 RISK_FREE_RATE = 0.0  # crypto has no meaningful risk-free rate; keep it simple.
 
 
-def get_daily_returns(db: Session, asset_ids: List[int], lookback_days: int = 90) -> pd.DataFrame:
-    """Wide DataFrame of daily returns: one column per asset symbol, one row per day.
+def get_daily_prices(db: Session, asset_ids: List[int], lookback_days: int = 90) -> pd.DataFrame:
+    """Wide DataFrame of daily closing prices: one column per asset symbol, one row per day.
 
-    Buckets `price_history` to a single closing price per asset per calendar day,
-    pivots to (day x symbol), then takes pct_change. Returns an empty/short frame
-    if coverage is thin — callers must check `len(df)` against MIN_TRADING_DAYS
-    rather than assume a usable matrix.
+    Buckets `price_history` to a single closing price per asset per calendar day and
+    pivots to (day x symbol). Shared by the returns/covariance math below and by the
+    DCA backtester in `dca.py`, which needs the raw price levels rather than returns.
     """
     if not asset_ids:
         return pd.DataFrame()
@@ -67,8 +66,19 @@ def get_daily_returns(db: Session, asset_ids: List[int], lookback_days: int = 90
     # then drop any leading rows still incomplete before the first common day.
     wide = wide.ffill().dropna()
 
-    returns = wide.pct_change().dropna()
-    return returns
+    return wide
+
+
+def get_daily_returns(db: Session, asset_ids: List[int], lookback_days: int = 90) -> pd.DataFrame:
+    """Wide DataFrame of daily returns (one column per asset symbol, one row per day).
+
+    Returns an empty/short frame if coverage is thin — callers must check `len(df)`
+    against MIN_TRADING_DAYS rather than assume a usable covariance matrix.
+    """
+    prices = get_daily_prices(db, asset_ids, lookback_days=lookback_days)
+    if prices.empty:
+        return prices
+    return prices.pct_change().dropna()
 
 
 def annualized_volatility(returns_df: pd.DataFrame) -> Dict[str, float]:

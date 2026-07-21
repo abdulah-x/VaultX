@@ -148,6 +148,13 @@ except ImportError as e:
     print(f"⚠️ Portfolio Analytics routes import failed: {e}")
     PORTFOLIO_ANALYTICS_AVAILABLE = False
 
+try:
+    from api.strategy import router as strategy_router
+    STRATEGY_AVAILABLE = True
+except ImportError as e:
+    print(f"⚠️ Strategy routes import failed: {e}")
+    STRATEGY_AVAILABLE = False
+
 # Include API routes.
 #
 # IMPORTANT ordering rule: the trades and pnl routers contain greedy catch-all
@@ -203,6 +210,10 @@ if EXPORTS_AVAILABLE:
 if PORTFOLIO_ANALYTICS_AVAILABLE:
     app.include_router(portfolio_analytics_router, prefix="/api", tags=["Portfolio Analytics"])
     print("✅ Portfolio Analytics routes registered")
+
+if STRATEGY_AVAILABLE:
+    app.include_router(strategy_router, prefix="/api", tags=["Strategy"])
+    print("✅ Strategy (DCA backtest) routes registered")
 
 if BACKUP_AVAILABLE:
     app.include_router(backup_router, tags=["Backup & Restore"])
@@ -330,6 +341,10 @@ async def health_check():
         "portfolio_analytics": {
             "available": PORTFOLIO_ANALYTICS_AVAILABLE,
             "status": "healthy" if PORTFOLIO_ANALYTICS_AVAILABLE else "unavailable"
+        },
+        "strategy": {
+            "available": STRATEGY_AVAILABLE,
+            "status": "healthy" if STRATEGY_AVAILABLE else "unavailable"
         },
         "backup": {
             "available": BACKUP_AVAILABLE,
@@ -471,6 +486,12 @@ async def api_info():
     if PORTFOLIO_ANALYTICS_AVAILABLE:
         advanced_endpoints["portfolio_analytics"] = {
             "optimize": "/api/portfolio/optimize"
+        }
+
+    if STRATEGY_AVAILABLE:
+        advanced_endpoints["strategy"] = {
+            "dca_backtest": "/api/strategy/dca-backtest",
+            "dca_presets": "/api/strategy/dca-presets"
         }
 
     return {
