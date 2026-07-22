@@ -7,6 +7,7 @@ from fastapi import Depends, HTTPException, status
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from sqlalchemy.orm import Session
 from typing import Optional
+import logging
 import uuid
 
 from database.connection import SessionLocal
@@ -14,7 +15,10 @@ from database.models import User, UserSession
 from core.auth import auth_manager
 from core.config import settings
 from core.errors import AuthenticationError, AuthorizationError
+from core.guest import GUEST_CLAIM, GUEST_READONLY_MESSAGE, is_guest_user
 from core.redis_client import redis_client
+
+logger = logging.getLogger(__name__)
 
 # Security scheme
 security = HTTPBearer(auto_error=False)
@@ -70,35 +74,64 @@ async def get_current_user(
         # Check if user is active
         if not user.is_active:
             raise AuthorizationError("User account is disabled")
-        
+
+        # Stamp guest-ness from the token claim, not from the row: the demo
+        # account is an ordinary user, and it's the token that is restricted.
+        # Transient per-request attribute — the session is request-scoped, so
+        # this never leaks onto another request's view of the same row.
+        user.is_guest = bool(payload.get(GUEST_CLAIM))
+
         return user
         
     except Exception as e:
         if isinstance(e, (AuthenticationError, AuthorizationError)):
             raise e
-        # Log the actual error for debugging
-        print(f"JWT Verification Error: {type(e).__name__}: {e}")
-        raise AuthenticationError(f"Invalid authentication token: {str(e)}")
+        # Logged server-side only — the exception text can reveal why a token was
+        # rejected, which helps an attacker iterate on a forgery.
+        logger.warning("Token verification failed: %s: %s", type(e).__name__, e)
+        raise AuthenticationError("Invalid authentication token")
 
 async def get_current_active_user(
     current_user: User = Depends(get_current_user)
 ) -> User:
-    """
-    Get the current active user (additional check for active status)
+    """Authenticated, enabled, and email-verified.
+
+    Email verification is enforced here rather than on each route: this is the
+    dependency every feature endpoint already uses, so putting the check in one
+    place means a new route can't accidentally skip it.
+
+    The handful of endpoints an unverified user still needs — reading their own
+    profile (the frontend's session check), logging out, and requesting a new
+    verification code — deliberately depend on `get_current_user` instead, or
+    they'd have no way to reach the verification screen at all.
     """
     if not current_user.is_active:
         raise AuthorizationError("User account is disabled")
+    if not current_user.is_verified:
+        raise AuthorizationError(
+            "Email address not verified. Check your inbox for the verification code."
+        )
     return current_user
 
-async def get_current_verified_user(
+# Kept as an explicit alias: some routes read better naming the requirement
+# outright, and it documents that verification is part of the active check.
+get_current_verified_user = get_current_active_user
+
+async def require_not_guest(
     current_user: User = Depends(get_current_active_user)
 ) -> User:
+    """Reject demo-mode sessions.
+
+    The guest middleware in `main.py` already refuses every unsafe HTTP method,
+    so this is defence in depth rather than the primary control — use it on
+    routes where the restriction is part of the route's own contract (the AI
+    advisor) so the rule is visible at the definition instead of only in a
+    middleware allowlist.
     """
-    Get the current verified user (requires email verification)
-    """
-    if not current_user.is_verified:
-        raise AuthorizationError("User account is not verified")
+    if is_guest_user(current_user):
+        raise AuthorizationError(GUEST_READONLY_MESSAGE)
     return current_user
+
 
 async def require_admin(
     current_user: User = Depends(get_current_active_user)
