@@ -37,10 +37,18 @@ class BinanceClientManager:
     _emergency_disabled = os.getenv('EMERGENCY_DISABLE_BINANCE', 'false').lower() == 'true'
     _maintenance_mode = os.getenv('MAINTENANCE_MODE', 'false').lower() == 'true'
 
-    def __init__(self):
-        self.api_key = os.getenv('BINANCE_API_KEY')
-        self.secret_key = os.getenv('BINANCE_SECRET_KEY')
-        self.testnet = os.getenv('BINANCE_TESTNET', 'true').lower() == 'true'
+    def __init__(self, api_key: str = None, secret_key: str = None, testnet: bool = None):
+        # Credentials default to the process-wide env keys so every existing
+        # call site keeps working. Passing them explicitly is how per-user
+        # connections are built (see `for_user`), which is what makes multi-user
+        # Binance access possible at all — a single shared env key would show
+        # every user the same account.
+        self.api_key = api_key if api_key is not None else os.getenv('BINANCE_API_KEY')
+        self.secret_key = secret_key if secret_key is not None else os.getenv('BINANCE_SECRET_KEY')
+        if testnet is not None:
+            self.testnet = testnet
+        else:
+            self.testnet = os.getenv('BINANCE_TESTNET', 'true').lower() == 'true'
         self.client = None
         self.connected = False
         self.last_request_time = 0
@@ -49,6 +57,32 @@ class BinanceClientManager:
 
         # Validate configuration
         self._validate_config()
+
+    @classmethod
+    def for_user(cls, user) -> "BinanceClientManager":
+        """Build a manager from a user's own stored credentials.
+
+        Falls back to the env keys when the user hasn't connected an account, so
+        existing single-key deployments keep working. Returns None-credentialed
+        (and therefore unusable) rather than raising when decryption fails —
+        `get_client()` already handles missing credentials, and callers surface
+        that as "not connected".
+        """
+        from core.crypto import decrypt_secret
+
+        encrypted_key = getattr(user, "encrypted_api_key", None)
+        encrypted_secret = getattr(user, "encrypted_api_secret", None)
+        if not encrypted_key or not encrypted_secret:
+            return cls()
+
+        api_key = decrypt_secret(encrypted_key)
+        secret_key = decrypt_secret(encrypted_secret)
+        if not api_key or not secret_key:
+            logger.warning("User %s has unreadable Binance credentials", getattr(user, "id", "?"))
+            return cls(api_key="", secret_key="")
+
+        testnet = getattr(user, "binance_testnet", True)
+        return cls(api_key=api_key, secret_key=secret_key, testnet=bool(testnet))
 
     @property
     def emergency_disabled(self) -> bool:
