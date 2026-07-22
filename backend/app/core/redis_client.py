@@ -3,12 +3,15 @@ Redis client for token blacklisting and caching
 """
 import redis
 import json
+import logging
 from typing import Optional, Any
 from datetime import datetime, timedelta
 import os
 from dotenv import load_dotenv
 
 load_dotenv()
+
+logger = logging.getLogger(__name__)
 
 class RedisClient:
     """Redis client for token blacklisting and session management"""
@@ -161,6 +164,73 @@ class RedisClient:
         except Exception as e:
             print(f"❌ Error verifying OTP: {e}")
             return False, "OTP verification error"
+
+    def register_failed_login(self, identifier: str, window_seconds: int = 900) -> int:
+        """Count one failed login attempt and return the running total.
+
+        Keyed by "<ip>:<username>" so a shared NAT egress can't lock out an
+        unrelated account, and one attacker can't lock out a victim by spamming
+        their username from many IPs.
+
+        Atomic INCR, with EXPIRE set only on first write so the window is a fixed
+        period after the first failure rather than sliding forward on every
+        attempt (which would never expire under sustained attack).
+        """
+        if not self.connected:
+            return 0
+        try:
+            key = f"login_fail:{identifier}"
+            count = self.redis_client.incr(key)
+            if count == 1:
+                self.redis_client.expire(key, window_seconds)
+            return int(count)
+        except Exception as e:
+            # Availability over enforcement: a Redis outage must not block logins.
+            logger.warning("Failed-login counter unavailable: %s", e)
+            return 0
+
+    def get_failed_login_count(self, identifier: str) -> int:
+        """Current failed-login count for an identifier, 0 if unknown."""
+        if not self.connected:
+            return 0
+        try:
+            value = self.redis_client.get(f"login_fail:{identifier}")
+            return int(value) if value else 0
+        except Exception as e:
+            logger.warning("Failed-login lookup unavailable: %s", e)
+            return 0
+
+    def clear_failed_logins(self, identifier: str) -> None:
+        """Reset the counter after a successful login."""
+        if not self.connected:
+            return
+        try:
+            self.redis_client.delete(f"login_fail:{identifier}")
+        except Exception as e:
+            logger.warning("Failed-login reset unavailable: %s", e)
+
+    def incr_rate_counter(self, key: str, window_seconds: int) -> int:
+        """Generic fixed-window counter; returns the running total.
+
+        Same shape as `register_failed_login` (atomic INCR, EXPIRE only on the
+        first write so the window doesn't slide forward under sustained load),
+        but for throttles that aren't about credentials — currently guest-session
+        creation, which is unauthenticated and therefore open to anyone.
+
+        Fails open (returns 0) on a Redis outage, matching every other throttle
+        here: availability of the product beats enforcement of a soft limit.
+        """
+        if not self.connected:
+            return 0
+        try:
+            full_key = f"ratelimit:{key}"
+            count = self.redis_client.incr(full_key)
+            if count == 1:
+                self.redis_client.expire(full_key, window_seconds)
+            return int(count)
+        except Exception as e:
+            logger.warning("Rate counter unavailable for %s: %s", key, e)
+            return 0
 
     def cleanup_expired_tokens(self):
         """
