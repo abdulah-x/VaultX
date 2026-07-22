@@ -61,6 +61,10 @@ services:
       - GOOGLE_CLIENT_SECRET=${GOOGLE_CLIENT_SECRET}
       # Google Gemini (LLM Portfolio Advisor) - server-side only
       - GEMINI_API_KEY=${GEMINI_API_KEY}
+      # CREDENTIAL_ENCRYPTION_KEY deliberately NOT listed here — same gotcha as
+      # BINANCE_API_KEY below: compose substitutes from the ROOT .env, which
+      # doesn't carry it, so listing it would shadow backend/.env with an empty
+      # value and make every stored credential unreadable.
       # Allow frontend to access backend
       - ALLOWED_ORIGINS=["http://localhost:3100", "http://127.0.0.1:3100"]
     volumes:
