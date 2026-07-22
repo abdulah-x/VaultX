@@ -1,4 +1,4 @@
-from fastapi import FastAPI, HTTPException, Request
+from fastapi import FastAPI, HTTPException, Request, status
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from fastapi.exceptions import RequestValidationError
@@ -39,6 +39,54 @@ async def add_request_id(request: Request, call_next):
     response = await call_next(request)
     response.headers["X-Request-ID"] = request_id
     return response
+
+
+# Guest ("demo mode") enforcement.
+#
+# Every guest shares ONE seeded demo account, so a single reachable write
+# endpoint would let any anonymous visitor corrupt the demo for everyone at
+# once. Rather than guard mutating routes one at a time — which holds only until
+# someone adds a route and forgets — the rule is inverted here: a guest token may
+# use safe methods only, for every route that exists or will ever exist.
+#
+# This runs before routing on purpose, so it also covers routes that skip the
+# auth dependency entirely.
+from core.guest import (
+    GUEST_ALLOWED_WRITES,
+    GUEST_DENIED_MESSAGE,
+    GUEST_DENIED_PREFIXES,
+    GUEST_READONLY_MESSAGE,
+    SAFE_METHODS,
+    request_is_guest,
+)
+
+
+@app.middleware("http")
+async def enforce_guest_restrictions(request: Request, call_next):
+    path = request.url.path
+    method = request.method
+
+    needs_check = (
+        method not in SAFE_METHODS
+        or path.startswith(GUEST_DENIED_PREFIXES)
+    )
+    # Skip the JWT decode entirely for the overwhelmingly common case: a plain
+    # read that isn't a gated surface.
+    if needs_check and request_is_guest(request):
+        if path.startswith(GUEST_DENIED_PREFIXES):
+            message = GUEST_DENIED_MESSAGE
+        elif (method, path) in GUEST_ALLOWED_WRITES:
+            return await call_next(request)
+        else:
+            message = GUEST_READONLY_MESSAGE
+
+        return JSONResponse(
+            status_code=status.HTTP_403_FORBIDDEN,
+            content={"error": {"message": message, "code": "GUEST_RESTRICTED"}},
+        )
+
+    return await call_next(request)
+
 
 # Add CORS middleware
 app.add_middleware(
@@ -155,6 +203,13 @@ except ImportError as e:
     print(f"⚠️ Strategy routes import failed: {e}")
     STRATEGY_AVAILABLE = False
 
+try:
+    from api.binance_connect import router as binance_connect_router
+    BINANCE_CONNECT_AVAILABLE = True
+except ImportError as e:
+    print(f"⚠️ Binance Connect routes import failed: {e}")
+    BINANCE_CONNECT_AVAILABLE = False
+
 # Include API routes.
 #
 # IMPORTANT ordering rule: the trades and pnl routers contain greedy catch-all
@@ -214,6 +269,10 @@ if PORTFOLIO_ANALYTICS_AVAILABLE:
 if STRATEGY_AVAILABLE:
     app.include_router(strategy_router, prefix="/api", tags=["Strategy"])
     print("✅ Strategy (DCA backtest) routes registered")
+
+if BINANCE_CONNECT_AVAILABLE:
+    app.include_router(binance_connect_router, prefix="/api", tags=["Binance Connect"])
+    print("✅ Binance Connect routes registered")
 
 if BACKUP_AVAILABLE:
     app.include_router(backup_router, tags=["Backup & Restore"])
@@ -346,6 +405,10 @@ async def health_check():
             "available": STRATEGY_AVAILABLE,
             "status": "healthy" if STRATEGY_AVAILABLE else "unavailable"
         },
+        "binance_connect": {
+            "available": BINANCE_CONNECT_AVAILABLE,
+            "status": "healthy" if BINANCE_CONNECT_AVAILABLE else "unavailable"
+        },
         "backup": {
             "available": BACKUP_AVAILABLE,
             "status": "healthy" if BACKUP_AVAILABLE else "unavailable"
@@ -425,9 +488,14 @@ async def api_info():
         "binance_test": "/api/binance-test"
     }
     
+    # Let the landing page know whether to render the "Try as guest" button
+    # rather than hardcoding the assumption client-side.
+    if settings.guest_mode_enabled:
+        core_endpoints["guest_session"] = "/api/auth/guest"
+
     # Advanced features endpoints
     advanced_endpoints = {}
-    
+
     if PORTFOLIO_SYNC_AVAILABLE:
         advanced_endpoints["portfolio_sync"] = {
             "sync": "/api/portfolio/sync",

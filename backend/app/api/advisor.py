@@ -11,7 +11,7 @@ import logging
 from fastapi import APIRouter, Depends
 from pydantic import BaseModel, Field
 
-from core.dependencies import get_db, get_current_active_user
+from core.dependencies import get_db, require_not_guest
 from core.errors import ExternalAPIError, ValidationError
 from database import User
 from services.ai.client import gemini_client, DISCLAIMER
@@ -34,7 +34,9 @@ class ChatResponse(BaseModel):
 @router.post("/advisor/chat", response_model=ChatResponse)
 async def chat(
     payload: ChatRequest,
-    current_user: User = Depends(get_current_active_user),
+    # The advisor is a paid feature and spends real Gemini quota per call, so
+    # demo-mode sessions are refused here as well as in the guest middleware.
+    current_user: User = Depends(require_not_guest),
     db=Depends(get_db),
 ):
     question = payload.question.strip()

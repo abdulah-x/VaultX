@@ -26,36 +26,37 @@ axiosInstance.interceptors.request.use(
   }
 );
 
-// Response interceptor to handle token refresh
+// Response interceptor.
+//
+// There is no token-refresh flow: the backend exposes no /api/auth/refresh
+// endpoint and login never issues a refresh token, so the previous
+// implementation here read a 'vaultx_refresh_token' key that was never written
+// and always fell through to a redirect. On a 401 we simply clear the session
+// and send the user to /login, which is what actually happened before minus the
+// dead round-trip.
 axiosInstance.interceptors.response.use(
   (response) => response,
   async (error: AxiosError) => {
-    const originalRequest = error.config as any;
+    const status = error.response?.status;
 
-    // If error is 401 and we haven't tried to refresh yet
-    if (error.response?.status === 401 && !originalRequest._retry) {
-      originalRequest._retry = true;
-
-      try {
-        const refreshToken = localStorage.getItem('vaultx_refresh_token');
-        if (refreshToken) {
-          const response = await axios.post(`${API_BASE_URL}/api/auth/refresh`, {
-            refresh_token: refreshToken,
-          });
-
-          const { access_token } = response.data;
-          localStorage.setItem('vaultx_token', access_token);
-
-          // Retry original request with new token
-          originalRequest.headers.Authorization = `Bearer ${access_token}`;
-          return axiosInstance(originalRequest);
-        }
-      } catch (refreshError) {
-        // Refresh failed, clear tokens and redirect to login
-        localStorage.removeItem('vaultx_token');
-        localStorage.removeItem('vaultx_refresh_token');
+    if (status === 401 && typeof window !== 'undefined') {
+      localStorage.removeItem('vaultx_token');
+      // Don't bounce if we're already on an auth screen — that would interrupt
+      // a user mid-login or mid-verification.
+      const path = window.location.pathname;
+      const onAuthPage = ['/login', '/signup', '/verify-email', '/forgot-password', '/reset-password']
+        .some((p) => path.startsWith(p));
+      if (!onAuthPage) {
         window.location.href = '/login';
-        return Promise.reject(refreshError);
+      }
+    }
+
+    // 403 from a verified-email guard means the account exists and is logged in
+    // but hasn't confirmed its address — send them to finish that, not to login.
+    if (status === 403 && typeof window !== 'undefined') {
+      const detail = (error.response?.data as any)?.error?.message ?? '';
+      if (String(detail).toLowerCase().includes('not verified') && !window.location.pathname.startsWith('/verify-email')) {
+        window.location.href = '/verify-email';
       }
     }
 
@@ -80,6 +81,14 @@ export const api = {
       lastName: string;
     }) => {
       const response = await axiosInstance.post('/api/auth/register', data);
+      return response.data;
+    },
+    // Start a read-only demo session. Takes no credentials — the backend hands
+    // back a short-lived token scoped to the shared demo account. Writes and the
+    // AI advisor are refused server-side, so the UI only needs to *reflect*
+    // demo mode (via user.is_guest), not enforce it.
+    guest: async () => {
+      const response = await axiosInstance.post('/api/auth/guest');
       return response.data;
     },
     logout: async () => {

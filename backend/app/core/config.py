@@ -28,10 +28,21 @@ class Settings(BaseSettings):
     # e.g. database backup/restore. Empty by default = nobody has access.
     admin_emails: str = ""
     
+    # Guest ("try it out") mode. Every guest shares the single seeded demo
+    # account below and gets a short-lived, read-only token. Set
+    # GUEST_MODE_ENABLED=false to turn the landing-page demo off entirely.
+    guest_mode_enabled: bool = True
+    demo_user_email: str = "demo@vaultx.local"
+
     # Binance API Configuration
     binance_api_key: Optional[str] = None
     binance_secret_key: Optional[str] = None
     binance_testnet: bool = True
+
+    # Encrypts per-user Binance API credentials at rest (core/crypto.py).
+    # Separate from secret_key on purpose: rotating the JWT key only ends live
+    # sessions, but rotating this one makes stored credentials unreadable.
+    credential_encryption_key: Optional[str] = None
     
     # Redis Configuration
     redis_url: str = "redis://localhost:6379/0"

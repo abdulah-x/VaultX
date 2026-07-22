@@ -130,13 +130,18 @@ export const useAuthState = () => {
       let errorMessage = 'Login failed. Please check your credentials.';
       
       if (error.response) {
-        // Backend returned an error response
+        // Same envelope as signup: { error: { message, code, ... } }.
+        const body = error.response.data;
+        const backendMessage = body?.error?.message ?? body?.detail;
+
         if (error.response.status === 401) {
-          errorMessage = 'Invalid email or password';
+          // Surface the backend text when it's more specific than "bad password"
+          // — rate limiting and disabled accounts both come back as 401.
+          errorMessage = backendMessage || 'Invalid email or password';
         } else if (error.response.status === 403) {
-          errorMessage = 'Account is disabled. Please contact support.';
-        } else if (error.response.data?.detail) {
-          errorMessage = error.response.data.detail;
+          errorMessage = backendMessage || 'Account is disabled. Please contact support.';
+        } else if (backendMessage) {
+          errorMessage = backendMessage;
         }
       } else if (error.message) {
         if (error.message.includes('Network Error') || error.message.includes('ERR_CONNECTION_REFUSED')) {
@@ -189,17 +194,19 @@ export const useAuthState = () => {
       let errorMessage = 'Signup failed. Please try again.';
       
       if (error.response) {
-        // Backend returned an error response
-        if (error.response.status === 400) {
-          if (error.response.data?.detail) {
-            errorMessage = error.response.data.detail;
-          } else {
-            errorMessage = 'Invalid signup data. Please check your information.';
-          }
+        // The backend's ValidationError handler returns 422 with the message at
+        // error.error.message — not 400/409 with a `detail` field. Reading the
+        // wrong shape meant every real validation message (weak password,
+        // username taken) was replaced by the generic fallback.
+        const body = error.response.data;
+        const backendMessage = body?.error?.message ?? body?.detail;
+
+        if (backendMessage) {
+          errorMessage = backendMessage;
+        } else if (error.response.status === 422 || error.response.status === 400) {
+          errorMessage = 'Invalid signup data. Please check your information.';
         } else if (error.response.status === 409) {
           errorMessage = 'Email or username already exists.';
-        } else if (error.response.data?.detail) {
-          errorMessage = error.response.data.detail;
         }
       } else if (error.message) {
         if (error.message.includes('Network Error') || error.message.includes('ERR_CONNECTION_REFUSED')) {

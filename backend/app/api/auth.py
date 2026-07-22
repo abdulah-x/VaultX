@@ -11,7 +11,9 @@ from pydantic import BaseModel, EmailStr, validator
 from typing import Optional, Dict, Any
 from datetime import datetime, timedelta
 import re
+import secrets
 
+from core.config import settings
 from core.dependencies import get_db, get_current_active_user, get_current_user
 from core.auth import auth_manager
 from core.errors import (
@@ -20,12 +22,23 @@ from core.errors import (
     NotFoundError,
     DatabaseError
 )
+from core.guest import (
+    GUEST_CLAIM,
+    GUEST_MAX_PER_IP,
+    GUEST_TOKEN_MINUTES,
+    GUEST_WINDOW_SECONDS,
+)
 from database.models import User, UserSession
 from core.redis_client import redis_client
 from core.audit import log_audit_event
 from core.validators import validate_password_strength
 
 router = APIRouter()
+
+# Failed-login throttle. Counted per (IP, username) pair so neither a shared
+# egress IP nor a targeted username can be used to lock out a third party.
+MAX_LOGIN_ATTEMPTS = 10
+LOGIN_ATTEMPT_WINDOW_SECONDS = 900  # 15 minutes
 
 # Security scheme for token extraction
 security = HTTPBearer()
@@ -112,14 +125,15 @@ async def register_user(
         ).first()
 
         if existing_user:
-            if existing_user.username == user_data.username:
-                log_audit_event(db, None, "register", f"Registration failed: username '{user_data.username}' already taken",
-                                 ip_address=client_ip, user_agent=user_agent, success=False, error_message="username_taken")
-                raise ValidationError("Username already taken")
-            else:
-                log_audit_event(db, None, "register", f"Registration failed: email already registered",
-                                 ip_address=client_ip, user_agent=user_agent, success=False, error_message="email_taken")
-                raise ValidationError("Email already registered")
+            # A username collision is safe to state plainly — usernames are public
+            # and the user has to be told to pick another. An *email* collision is
+            # not: saying "email already registered" confirms an address has an
+            # account here. Both cases therefore return the username wording, and
+            # the real reason is recorded only in the audit log.
+            reason = "username_taken" if existing_user.username == user_data.username else "email_taken"
+            log_audit_event(db, None, "register", f"Registration failed: {reason}",
+                             ip_address=client_ip, user_agent=user_agent, success=False, error_message=reason)
+            raise ValidationError("Username or email is unavailable")
 
         # Create new user
         hashed_password = auth_manager.get_password_hash(user_data.password)
@@ -173,6 +187,72 @@ async def register_user(
     except Exception as e:
         raise DatabaseError(f"Failed to create user account: {str(e)}")
 
+@router.post("/auth/guest", response_model=TokenResponse)
+async def guest_login(request: Request, db: Session = Depends(get_db)):
+    """Start a read-only demo session — no signup, no credentials.
+
+    Every guest is issued a short-lived token pointing at the *same* seeded demo
+    account (`backend/create_demo_account.py`), so there is nothing to create here
+    and nothing to clean up afterwards: the portfolio, the analytics and the
+    exported reports a guest sees are the ones that were generated once for that
+    account, not regenerated per visitor.
+
+    The token carries a `guest` claim which the middleware in `main.py` uses to
+    refuse every unsafe HTTP method, keeping the shared account read-only.
+    """
+    if not settings.guest_mode_enabled:
+        raise NotFoundError("Demo mode is not available")
+
+    client_ip = request.client.host if request.client else "unknown"
+
+    # This endpoint takes no credentials, so the IP is the only thing to throttle
+    # on. Without it, anyone could mint tokens in a loop and drive traffic to the
+    # market-data and export endpoints on our Binance rate limit.
+    if redis_client.incr_rate_counter(f"guest:{client_ip}", GUEST_WINDOW_SECONDS) > GUEST_MAX_PER_IP:
+        raise AuthenticationError(
+            "Too many demo sessions from this address. Please try again later."
+        )
+
+    demo_user = db.query(User).filter(User.email == settings.demo_user_email).first()
+    if not demo_user or not demo_user.is_active:
+        # Misconfiguration (seeder never run), not a client error — but don't
+        # advertise which of the two it is.
+        raise NotFoundError("Demo mode is not available")
+
+    access_token = auth_manager.create_access_token(
+        {
+            "sub": str(demo_user.id),
+            "username": demo_user.username,
+            GUEST_CLAIM: True,
+            # Every guest token shares the same subject and claims, so without a
+            # unique id two guests starting in the same second would receive
+            # byte-identical JWTs — and one of them logging out would blacklist
+            # the other's session. Regular logins don't hit this because their
+            # subjects differ.
+            "jti": secrets.token_urlsafe(16),
+        },
+        expires_delta=timedelta(minutes=GUEST_TOKEN_MINUTES),
+    )
+
+    # Deliberately no UserSession row and no audit entry: guests are anonymous
+    # and share one user_id, so both would accumulate thousands of identical
+    # rows that identify nobody.
+    return TokenResponse(
+        access_token=access_token,
+        expires_in=GUEST_TOKEN_MINUTES * 60,
+        user={
+            "id": demo_user.id,
+            "username": demo_user.username,
+            "email": demo_user.email,
+            "first_name": demo_user.first_name,
+            "last_name": demo_user.last_name,
+            "is_active": True,
+            "is_verified": True,
+            "is_guest": True,
+        },
+    )
+
+
 @router.post("/auth/login", response_model=TokenResponse)
 async def login_user(
     login_data: UserLogin,
@@ -184,11 +264,22 @@ async def login_user(
     """
     client_ip = request.client.host if request.client else "unknown"
     user_agent = request.headers.get("user-agent", "unknown")
+    rate_key = f"{client_ip}:{login_data.username}"
     try:
+        # Throttle before doing any password work, so a locked-out attacker
+        # can't keep consuming bcrypt CPU.
+        if redis_client.get_failed_login_count(rate_key) >= MAX_LOGIN_ATTEMPTS:
+            log_audit_event(db, None, "login", f"Login blocked for '{login_data.username}': too many attempts",
+                             ip_address=client_ip, user_agent=user_agent, success=False, error_message="rate_limited")
+            raise AuthenticationError(
+                "Too many failed login attempts. Please try again later."
+            )
+
         # Authenticate user
         user = auth_manager.authenticate_user(db, login_data.username, login_data.password)
 
         if not user:
+            redis_client.register_failed_login(rate_key, LOGIN_ATTEMPT_WINDOW_SECONDS)
             log_audit_event(db, None, "login", f"Login failed for '{login_data.username}': invalid credentials",
                              ip_address=client_ip, user_agent=user_agent, success=False, error_message="invalid_credentials")
             raise AuthenticationError("Invalid username/email or password")
@@ -197,6 +288,9 @@ async def login_user(
             log_audit_event(db, user.id, "login", f"Login failed for '{user.username}': account disabled",
                              ip_address=client_ip, user_agent=user_agent, success=False, error_message="account_disabled")
             raise AuthenticationError("Account is disabled")
+
+        # Successful auth clears the throttle for this IP/username pair.
+        redis_client.clear_failed_logins(rate_key)
 
         # Create access token
         token_data = {"sub": str(user.id), "username": user.username}
@@ -234,7 +328,7 @@ async def login_user(
 @router.get("/auth/logout")
 async def logout_user_get(
     request: Request,
-    current_user: User = Depends(get_current_active_user),
+    current_user: User = Depends(get_current_user),
     current_token: str = Depends(get_current_token),
     db: Session = Depends(get_db)
 ):
@@ -266,7 +360,7 @@ async def logout_user_get(
 @router.post("/auth/logout")
 async def logout_user(
     request: Request,
-    current_user: User = Depends(get_current_active_user),
+    current_user: User = Depends(get_current_user),
     current_token: str = Depends(get_current_token),
     db: Session = Depends(get_db)
 ):
@@ -315,7 +409,7 @@ async def logout_user(
 @router.post("/auth/logout-all")
 async def logout_all_devices(
     request: Request,
-    current_user: User = Depends(get_current_active_user),
+    current_user: User = Depends(get_current_user),
     current_token: str = Depends(get_current_token),
     db: Session = Depends(get_db)
 ):
@@ -350,7 +444,7 @@ async def logout_all_devices(
 
 @router.get("/auth/profile", response_model=UserProfile)
 async def get_user_profile(
-    current_user: User = Depends(get_current_active_user)
+    current_user: User = Depends(get_current_user)
 ):
     """
     Get current user's profile information
