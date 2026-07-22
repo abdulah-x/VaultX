@@ -9,13 +9,21 @@ from jose import JWTError, jwt
 from passlib.context import CryptContext
 from fastapi import HTTPException, status
 from sqlalchemy.orm import Session
+import logging
 import secrets
 
 from core.config import settings
 from database.models import User, UserSession
 
+logger = logging.getLogger(__name__)
+
 # Password hashing context - simplified for compatibility
 pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
+
+# Hashed once at import so a failed lookup in authenticate_user costs the same
+# bcrypt work as a real password check. The plaintext is irrelevant — nothing
+# ever verifies against it successfully.
+_DUMMY_PASSWORD_HASH = pwd_context.hash("vaultx-constant-time-placeholder")
 
 class AuthManager:
     """Handles all authentication operations"""
@@ -38,8 +46,8 @@ class AuthManager:
                 plain_password = password_bytes[:72].decode('utf-8', errors='ignore')
             
             return pwd_context.verify(plain_password, hashed_password)
-        except Exception as e:
-            print(f"Password verification error: {e}")
+        except Exception:
+            logger.exception("Password verification failed")
             return False
     
     def get_password_hash(self, password: str) -> str:
@@ -55,9 +63,9 @@ class AuthManager:
                 password = password_bytes[:72].decode('utf-8', errors='ignore')
             
             return pwd_context.hash(password)
-        except Exception as e:
-            print(f"Password hashing error: {e}")
-            raise e
+        except Exception:
+            logger.exception("Password hashing failed")
+            raise
     
     def create_access_token(self, data: Dict[str, Any], expires_delta: Optional[timedelta] = None) -> str:
         """Create a JWT access token"""
@@ -78,26 +86,35 @@ class AuthManager:
             payload = jwt.decode(token, self.secret_key, algorithms=[self.algorithm])
             return payload
         except JWTError as e:
-            print(f"JWT Decode Error: {e}")
+            # Log the reason, but never return it: the jose message distinguishes
+            # "signature verification failed" from "expired" from "malformed",
+            # which tells an attacker which part of a forged token to fix.
+            logger.warning("JWT decode failed: %s", e)
             raise HTTPException(
                 status_code=status.HTTP_401_UNAUTHORIZED,
-                detail=f"Invalid authentication token: {str(e)}",
+                detail="Invalid authentication token",
                 headers={"WWW-Authenticate": "Bearer"},
             )
     
     def authenticate_user(self, db: Session, username: str, password: str) -> Optional[User]:
-        """Authenticate a user with username/email and password"""
-        # Try to find user by username or email
+        """Authenticate a user with username/email and password.
+
+        When no user matches we still run a bcrypt verify against a throwaway
+        hash. Returning early would make "no such user" measurably faster than
+        "wrong password", which turns response time into a username/email
+        oracle — the same enumeration leak we close in the response bodies.
+        """
         user = db.query(User).filter(
             (User.username == username) | (User.email == username)
         ).first()
-        
+
         if not user:
+            self.verify_password(password, _DUMMY_PASSWORD_HASH)
             return None
-        
+
         if not self.verify_password(password, user.hashed_password):
             return None
-        
+
         return user
     
     def create_user_session(self, db: Session, user_id: int, device_info: str = None, ip_address: str = None) -> UserSession:
