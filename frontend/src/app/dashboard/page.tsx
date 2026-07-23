@@ -25,6 +25,22 @@ import {
  mockPerformanceData
 } from "@/data/mockData";
 
+/** Shape shared by the backend-derived holdings and the mock fallback, so the
+ *  union of the two is still typed rather than collapsing to any. */
+interface HoldingRow {
+ id: string;
+ asset: string;
+ symbol: string;
+ qty: number;
+ avgBuyPrice: number;
+ lastPrice: number;
+ marketValue: number;
+ realizedPnL: number;
+ unrealizedPnL: number;
+ allocation: number;
+ change24h: number;
+}
+
 export default function DashboardPage() {
  const [selectedTimeframe, setSelectedTimeframe] = useState("30D");
  const { user } = useAuth();
@@ -136,7 +152,7 @@ export default function DashboardPage() {
  } : mockPortfolioMetrics;
 
  // Transform backend holdings to component format
- const transformedHoldings = portfolioData?.portfolio_summary?.holdings?.map((holding: any, index: number) => ({
+ const transformedHoldings: HoldingRow[] = portfolioData?.portfolio_summary?.holdings?.map((holding: any, index: number) => ({
  id: `${holding.asset_symbol}-${index}`,
  asset: holding.asset_name,
  symbol: holding.asset_symbol,
@@ -168,7 +184,7 @@ export default function DashboardPage() {
  'UNI': '#ff007a',
  };
 
- const allocationData = holdings.map(holding => ({
+ const allocationData = holdings.map((holding: HoldingRow) => ({
  asset: holding.symbol,
  value: holding.marketValue,
  percentage: holding.allocation,
