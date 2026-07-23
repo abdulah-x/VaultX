@@ -1,5 +1,9 @@
-import React, { useState, useEffect, createContext, useContext } from 'react';
+import { useState, useEffect } from 'react';
 import { api } from '@/lib/api';
+
+// This module owns the auth *state machine* only. The context and the useAuth
+// hook that reads it live in providers/AuthProvider, which is what the app
+// actually mounts.
 
 export interface User {
   id: number;
@@ -24,25 +28,6 @@ export interface AuthState {
   isAuthenticated: boolean;
   error: string | null;
 }
-
-interface AuthContextType extends AuthState {
-  login: (email: string, password: string) => Promise<void>;
-  signup: (email: string, password: string, firstName: string, lastName: string, username: string) => Promise<void>;
-  logout: () => Promise<void>;
-  clearError: () => void;
-  refreshToken: () => Promise<void>;
-  updateUserProfile: (updates: Partial<User>) => Promise<void>;
-}
-
-const AuthContext = createContext<AuthContextType | undefined>(undefined);
-
-export const useAuth = () => {
-  const context = useContext(AuthContext);
-  if (context === undefined) {
-    throw new Error('useAuth must be used within an AuthProvider');
-  }
-  return context;
-};
 
 export const useAuthState = () => {
   const [authState, setAuthState] = useState<AuthState>({
@@ -263,33 +248,6 @@ export const useAuthState = () => {
     }
   };
 
-  const refreshToken = async () => {
-    try {
-      const refreshTokenValue = localStorage.getItem('vaultx_refresh_token');
-      if (!refreshTokenValue) {
-        throw new Error('No refresh token available');
-      }
-      
-      const response = await api.auth.refreshToken(refreshTokenValue);
-      
-      if (response.success && response.data) {
-        localStorage.setItem('vaultx_token', response.data.access_token);
-        
-        setAuthState(prev => ({
-          ...prev,
-          user: response.data?.user || null,
-          error: null,
-        }));
-      } else {
-        throw new Error('Token refresh failed');
-      }
-    } catch (error: any) {
-      console.warn('Token refresh failed:', error.message);
-      // On refresh failure, logout user
-      await logout();
-    }
-  };
-
   const updateUserProfile = async (updates: Partial<User>) => {
     try {
       const response = await api.auth.updateProfile(updates);
@@ -321,7 +279,6 @@ export const useAuthState = () => {
     signup,
     logout,
     clearError,
-    refreshToken,
     updateUserProfile,
   };
 };
