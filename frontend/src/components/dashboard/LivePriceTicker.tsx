@@ -79,16 +79,22 @@ export default function LivePriceTicker() {
   };
 
   return (
-    <div className="bg-gray-900/60 backdrop-blur-sm border-b border-gray-800/80">
-      <div className="px-6 py-2 flex items-center gap-6 overflow-x-auto scrollbar-none">
+    <div className="bg-card border-border border-b">
+      <div className="scrollbar-none flex items-center gap-6 overflow-x-auto px-6 py-2">
         {/* Live indicator */}
-        <div className="flex items-center gap-1.5 shrink-0">
-          <div className={`w-1.5 h-1.5 rounded-full ${isLive ? "bg-green-400 animate-pulse" : "bg-yellow-500"}`} />
-          <span className="text-xs text-gray-500 font-medium">{isLive ? "LIVE" : "DEMO"}</span>
+        <div className="flex shrink-0 items-center gap-1.5">
+          <div
+            className={`h-1.5 w-1.5 rounded-full ${
+              isLive ? "bg-vaultx-success animate-pulse" : "bg-vaultx-warning"
+            }`}
+          />
+          <span className="text-muted-foreground text-xs font-medium">
+            {isLive ? "LIVE" : "DEMO"}
+          </span>
         </div>
 
         {/* Divider */}
-        <div className="h-4 w-px bg-gray-700 shrink-0" />
+        <div className="bg-border h-4 w-px shrink-0" />
 
         {/* Price items */}
         {prices.map((item) => {
@@ -100,11 +106,13 @@ export default function LivePriceTicker() {
                 className="w-2 h-2 rounded-full"
                 style={{ backgroundColor: CRYPTO_COLORS[item.symbol] || "#8b5cf6" }}
               />
-              <span className="text-xs font-bold text-gray-300">{item.symbol}</span>
-              <span className="text-xs font-mono text-white">{formatPrice(item.price)}</span>
+              <span className="text-muted-foreground text-xs font-bold">{item.symbol}</span>
+              <span className="text-foreground font-mono text-xs tabular-nums">
+                {formatPrice(item.price)}
+              </span>
               <span
-                className={`flex items-center gap-0.5 text-xs font-medium ${
-                  isPos ? "text-emerald-400" : "text-red-400"
+                className={`flex items-center gap-0.5 text-xs font-medium tabular-nums ${
+                  isPos ? "text-vaultx-success" : "text-vaultx-danger"
                 }`}
               >
                 {isPos ? (
@@ -121,8 +129,8 @@ export default function LivePriceTicker() {
         {/* Last updated */}
         {lastUpdated && (
           <>
-            <div className="h-4 w-px bg-gray-700 shrink-0 ml-auto" />
-            <div className="flex items-center gap-1 shrink-0 text-gray-600 text-xs">
+            <div className="bg-border ml-auto h-4 w-px shrink-0" />
+            <div className="text-muted-foreground flex shrink-0 items-center gap-1 text-xs">
               <RefreshCw className="w-3 h-3" />
               {lastUpdated.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}
             </div>
