@@ -1,4 +1,7 @@
+"use client";
+
 import { useState, useMemo } from 'react';
+import { Card } from '@/components/ui/Card';
 import { Treemap, ResponsiveContainer, Cell, Tooltip } from 'recharts';
 
 interface HeatmapData {
@@ -67,7 +70,7 @@ export default function PortfolioHeatmap({ holdings, totalValue }: PortfolioHeat
           height={height}
           style={{
             fill: props.color,
-            stroke: '#1f2937',
+            stroke: 'hsl(var(--card))',
             strokeWidth: 2,
             opacity: hoveredAsset === name ? 1 : 0.9,
             cursor: 'pointer'
@@ -128,26 +131,35 @@ export default function PortfolioHeatmap({ holdings, totalValue }: PortfolioHeat
     if (active && payload && payload.length) {
       const data = payload[0].payload;
       return (
-        <div className="bg-gray-900 border border-cyan-500/50 rounded-xl p-4 shadow-2xl backdrop-blur-sm">
-          <div className="text-white font-bold text-lg mb-2">{data.name}</div>
+        <div className="bg-popover text-popover-foreground border-border rounded-lg border p-4 shadow-lg">
+          <div className="mb-2 text-lg font-bold">{data.name}</div>
           <div className="space-y-1">
             <div className="flex justify-between gap-4">
-              <span className="text-gray-400">Allocation:</span>
-              <span className="text-cyan-400 font-semibold">{data.allocation.toFixed(1)}%</span>
-            </div>
-            <div className="flex justify-between gap-4">
-              <span className="text-gray-400">Value:</span>
-              <span className="text-white font-semibold">${data.value.toLocaleString()}</span>
-            </div>
-            <div className="flex justify-between gap-4">
-              <span className="text-gray-400">24h Change:</span>
-              <span className={`font-semibold ${data.change24h >= 0 ? 'text-emerald-400' : 'text-red-400'}`}>
-                {data.change24h >= 0 ? '+' : ''}{data.change24h.toFixed(2)}%
+              <span className="text-muted-foreground">Allocation:</span>
+              <span className="font-mono font-semibold tabular-nums">
+                {data.allocation.toFixed(1)}%
               </span>
             </div>
             <div className="flex justify-between gap-4">
-              <span className="text-gray-400">Price:</span>
-              <span className="text-white">${data.price.toLocaleString()}</span>
+              <span className="text-muted-foreground">Value:</span>
+              <span className="font-mono font-semibold tabular-nums">
+                ${data.value.toLocaleString()}
+              </span>
+            </div>
+            <div className="flex justify-between gap-4">
+              <span className="text-muted-foreground">24h Change:</span>
+              <span
+                className={`font-mono font-semibold tabular-nums ${
+                  data.change24h >= 0 ? "text-vaultx-success" : "text-vaultx-danger"
+                }`}
+              >
+                {data.change24h >= 0 ? "+" : ""}
+                {data.change24h.toFixed(2)}%
+              </span>
+            </div>
+            <div className="flex justify-between gap-4">
+              <span className="text-muted-foreground">Price:</span>
+              <span className="font-mono tabular-nums">${data.price.toLocaleString()}</span>
             </div>
           </div>
         </div>
@@ -157,22 +169,24 @@ export default function PortfolioHeatmap({ holdings, totalValue }: PortfolioHeat
   };
 
   return (
-    <div className="bg-gray-900/50 backdrop-blur-sm border border-gray-800 rounded-xl p-6 hover:bg-gray-900/60 transition-all duration-300">
-      <div className="flex items-center justify-between mb-6">
-        <h3 className="text-lg font-bold text-white">PORTFOLIO HEATMAP</h3>
-        <div className="flex items-center gap-4 text-xs text-gray-400">
+    <Card className="p-6">
+      <div className="mb-6 flex items-center justify-between">
+        <h3 className="font-heading text-lg font-bold">Portfolio Heatmap</h3>
+        {/* Swatches mirror the performance ramp below, which is a data scale
+            rather than chrome, so they stay literal in both themes. */}
+        <div className="text-muted-foreground flex items-center gap-4 text-xs">
           <div className="flex items-center gap-2">
-            <div className="w-3 h-3 bg-emerald-500 rounded-sm"></div>
+            <div className="bg-vaultx-success h-3 w-3 rounded-sm" />
             <span>Positive</span>
           </div>
           <div className="flex items-center gap-2">
-            <div className="w-3 h-3 bg-red-500 rounded-sm"></div>
+            <div className="bg-vaultx-danger h-3 w-3 rounded-sm" />
             <span>Negative</span>
           </div>
         </div>
       </div>
 
-      <div className="text-sm text-gray-400 mb-4">
+      <div className="text-muted-foreground mb-4 text-sm">
         Size = Allocation • Color = 24h Performance
       </div>
 
@@ -191,14 +205,16 @@ export default function PortfolioHeatmap({ holdings, totalValue }: PortfolioHeat
       </div>
 
       {/* Performance Summary */}
-      <div className="mt-4 flex justify-between items-center text-sm">
-        <div className="text-gray-400">
-          {enhancedHeatmapData.filter((d: HeatmapData) => d.change24h > 0).length} assets up • {enhancedHeatmapData.filter((d: HeatmapData) => d.change24h <= 0).length} assets down
+      <div className="mt-4 flex items-center justify-between text-sm">
+        <div className="text-muted-foreground">
+          {enhancedHeatmapData.filter((d: HeatmapData) => d.change24h > 0).length} assets up •{" "}
+          {enhancedHeatmapData.filter((d: HeatmapData) => d.change24h <= 0).length} assets down
         </div>
-        <div className="text-gray-300">
-          Largest holding: {enhancedHeatmapData[0]?.name} ({enhancedHeatmapData[0]?.allocation.toFixed(1)}%)
+        <div className="text-foreground">
+          Largest holding: {enhancedHeatmapData[0]?.name} (
+          {enhancedHeatmapData[0]?.allocation.toFixed(1)}%)
         </div>
       </div>
-    </div>
+    </Card>
   );
 }
