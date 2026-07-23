@@ -4,10 +4,19 @@ import { useState } from 'react';
 import { X } from 'lucide-react';
 import { GoogleLogin, CredentialResponse } from '@react-oauth/google';
 
+/** What callers actually read off the authenticated user. Typed narrowly and
+ *  optionally because the field is absent for a brand-new Google signup. */
+export interface GoogleAuthUser {
+ hasCompletedOnboarding?: boolean;
+ email?: string;
+ firstName?: string;
+ lastName?: string;
+}
+
 interface GoogleOAuthModalProps {
  isOpen: boolean;
  onClose: () => void;
- onSuccess: (token: string, user: unknown) => void;
+ onSuccess: (token: string, user: GoogleAuthUser) => void;
  context?: 'signup' | 'login'; // Whether this is signup or login flow
 }
 
