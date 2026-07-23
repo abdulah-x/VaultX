@@ -1,5 +1,10 @@
-import { PieChart, Pie, Cell, ResponsiveContainer, Tooltip } from 'recharts';
-import { useState } from 'react';
+"use client";
+
+import { PieChart, Pie, Cell, ResponsiveContainer, Tooltip } from "recharts";
+import { useState } from "react";
+import { Card } from "@/components/ui/Card";
+import Button from "@/components/ui/Button";
+import { cn } from "@/lib/utils";
 
 interface PortfolioAllocation {
   asset: string;
@@ -24,39 +29,64 @@ interface PortfolioOverviewProps {
   };
 }
 
-export default function PortfolioOverview({ 
-  totalBalance, 
-  allocationData, 
-  dayChange, 
-  weekChange 
+/** Recharts renders into SVG, which cannot read Tailwind classes -- these have
+ *  to be real colour values, so they read the same CSS variables the utilities
+ *  are built from and therefore still follow the theme. */
+const CHART_TEXT = "hsl(var(--foreground))";
+const CHART_STROKE = "hsl(var(--card))";
+
+const tone = (positive: boolean) => (positive ? "text-vaultx-success" : "text-vaultx-danger");
+
+function ChangeTile({
+  label,
+  change,
+}: {
+  label: string;
+  change: { value: string; percentage: string; isPositive: boolean };
+}) {
+  return (
+    <div className="border-border bg-secondary/40 rounded-lg border p-4 text-center">
+      <div className="text-muted-foreground mb-1 text-xs tracking-wide uppercase">{label}</div>
+      <div className={cn("font-mono text-lg font-bold tabular-nums", tone(change.isPositive))}>
+        {change.value}
+      </div>
+      <div className={cn("font-mono text-sm tabular-nums", tone(change.isPositive))}>
+        {change.percentage}
+      </div>
+    </div>
+  );
+}
+
+export default function PortfolioOverview({
+  totalBalance,
+  allocationData,
+  dayChange,
+  weekChange,
 }: PortfolioOverviewProps) {
   const [hoveredSlice, setHoveredSlice] = useState<string | null>(null);
 
   // Group small allocations into "Others" (anything below 5%)
   const processedAllocationData = (() => {
     const threshold = 5;
-    const mainAssets = allocationData.filter(item => item.percentage >= threshold);
-    const smallAssets = allocationData.filter(item => item.percentage < threshold);
-    
+    const mainAssets = allocationData.filter((item) => item.percentage >= threshold);
+    const smallAssets = allocationData.filter((item) => item.percentage < threshold);
+
     if (smallAssets.length > 0) {
-      const othersValue = smallAssets.reduce((sum, item) => sum + item.value, 0);
-      const othersPercentage = smallAssets.reduce((sum, item) => sum + item.percentage, 0);
-      
       return [
         ...mainAssets,
         {
-          asset: 'Others',
-          value: othersValue,
-          percentage: othersPercentage,
-          color: '#8b5cf6'
-        }
+          asset: "Others",
+          value: smallAssets.reduce((sum, item) => sum + item.value, 0),
+          percentage: smallAssets.reduce((sum, item) => sum + item.percentage, 0),
+          color: "var(--color-vaultx-secondary)",
+        },
       ];
     }
-    
+
     return mainAssets;
   })();
 
-  // Custom label rendering function for pie slices
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const renderCustomLabel = (entry: any) => {
     const { cx, cy, midAngle, innerRadius, outerRadius, percent, asset } = entry;
     const RADIAN = Math.PI / 180;
@@ -68,33 +98,33 @@ export default function PortfolioOverview({
     if (percent < 0.08) return null;
 
     return (
-      <text 
-        x={x} 
-        y={y} 
-        fill="#ffffff" 
-        textAnchor={x > cx ? 'start' : 'end'} 
+      <text
+        x={x}
+        y={y}
+        fill={CHART_TEXT}
+        textAnchor={x > cx ? "start" : "end"}
         dominantBaseline="central"
-        className="text-sm font-bold"
-        style={{ 
-          fontSize: '12px',
-          textShadow: '1px 1px 2px rgba(0,0,0,0.8)'
-        }}
+        style={{ fontSize: "12px", fontWeight: 600 }}
       >
         {`${asset}`}
       </text>
     );
   };
 
-  // Enhanced custom tooltip component
-  const CustomTooltip = ({ active, payload, label }: any) => {
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const CustomTooltip = ({ active, payload }: any) => {
     if (active && payload && payload.length) {
       const data = payload[0].payload;
       return (
-        <div className="bg-gray-900 border border-cyan-500/50 rounded-xl p-4 shadow-2xl backdrop-blur-sm">
-          <div className="text-white font-bold text-xl mb-2">{data.asset}</div>
+        <div className="bg-popover text-popover-foreground border-border rounded-lg border p-4 shadow-lg">
+          <div className="mb-2 text-xl font-bold">{data.asset}</div>
           <div className="flex items-center justify-between gap-4">
-            <span className="text-cyan-400 font-semibold text-lg">{data.percentage.toFixed(1)}%</span>
-            <span className="text-emerald-400 font-bold text-lg">${data.value.toLocaleString()}</span>
+            <span className="text-muted-foreground font-mono text-lg font-semibold tabular-nums">
+              {data.percentage.toFixed(1)}%
+            </span>
+            <span className="font-mono text-lg font-bold tabular-nums">
+              ${data.value.toLocaleString()}
+            </span>
           </div>
         </div>
       );
@@ -103,15 +133,14 @@ export default function PortfolioOverview({
   };
 
   return (
-    <div className="bg-gray-900/50 backdrop-blur-sm border border-gray-800 rounded-xl p-6 hover:bg-gray-900/60 transition-all duration-300">
-      <div className="flex items-center justify-center mb-6">
-        <h3 className="text-lg font-bold text-white">PORTFOLIO OVERVIEW</h3>
+    <Card className="p-6">
+      <div className="mb-6 flex items-center justify-center">
+        <h3 className="font-heading text-lg font-bold">Portfolio Overview</h3>
       </div>
 
-      {/* Enhanced Single Column Layout with Interactive Chart */}
-      <div className="flex flex-col items-center w-full">
-        {/* Interactive Donut Chart */}
-        <div className="relative w-full max-w-md mb-6 flex justify-center" style={{ height: '320px' }}>
+      <div className="flex w-full flex-col items-center">
+        {/* Donut chart */}
+        <div className="relative mb-6 flex w-full max-w-md justify-center" style={{ height: 320 }}>
           <ResponsiveContainer width="100%" height={320}>
             <PieChart>
               <Pie
@@ -126,84 +155,56 @@ export default function PortfolioOverview({
                 endAngle={450}
                 paddingAngle={3}
                 dataKey="value"
-                stroke="#1e293b"
+                stroke={CHART_STROKE}
                 strokeWidth={3}
+                isAnimationActive={false}
                 onMouseEnter={(data) => setHoveredSlice(data.asset)}
                 onMouseLeave={() => setHoveredSlice(null)}
-                style={{ cursor: 'pointer' }}
+                style={{ cursor: "pointer" }}
               >
                 {processedAllocationData.map((entry, index) => (
-                  <Cell 
-                    key={`cell-${index}`} 
+                  <Cell
+                    key={`cell-${index}`}
                     fill={entry.color}
                     fillOpacity={hoveredSlice === null || hoveredSlice === entry.asset ? 1 : 0.6}
-                    style={{
-                      filter: hoveredSlice === entry.asset ? 'brightness(1.2)' : 'none',
-                      transition: 'all 0.2s ease'
-                    }}
+                    style={{ transition: "fill-opacity 0.2s ease" }}
                   />
                 ))}
               </Pie>
               <Tooltip content={<CustomTooltip />} />
             </PieChart>
           </ResponsiveContainer>
-          
-          {/* Enhanced Center Label */}
-          <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
+
+          {/* Center label */}
+          <div className="pointer-events-none absolute inset-0 flex items-center justify-center">
             <div className="text-center">
-              <div className="text-xs font-medium text-gray-400 mb-2 uppercase tracking-wider">Total Balance</div>
-              <div className="text-4xl font-bold text-white tracking-tight mb-1">{totalBalance}</div>
-              {hoveredSlice && (
-                <div className="text-sm text-cyan-400 font-medium animate-fade-in">
-                  Hovering: {hoveredSlice}
-                </div>
-              )}
+              <div className="text-muted-foreground mb-2 text-xs font-medium tracking-wider uppercase">
+                Total Balance
+              </div>
+              <div className="font-mono text-4xl font-bold tracking-tight tabular-nums">
+                {totalBalance}
+              </div>
             </div>
           </div>
         </div>
-        
-        {/* Performance Summary Below Chart */}
+
+        {/* Performance summary */}
         <div className="w-full max-w-md">
-          <div className="grid grid-cols-2 gap-4 mb-6">
-            <div className="text-center p-4 bg-gray-800/40 rounded-lg border border-gray-700/50 hover:bg-gray-800/60 transition-colors">
-              <div className="text-xs text-gray-400 uppercase tracking-wide mb-1">24h Change</div>
-              <div className={`text-lg font-bold ${
-                dayChange.isPositive ? 'text-emerald-400' : 'text-red-400'
-              }`}>
-                {dayChange.value}
-              </div>
-              <div className={`text-sm ${
-                dayChange.isPositive ? 'text-emerald-400' : 'text-red-400'
-              }`}>
-                {dayChange.percentage}
-              </div>
-            </div>
-            <div className="text-center p-4 bg-gray-800/40 rounded-lg border border-gray-700/50 hover:bg-gray-800/60 transition-colors">
-              <div className="text-xs text-gray-400 uppercase tracking-wide mb-1">7d Change</div>
-              <div className={`text-lg font-bold ${
-                weekChange.isPositive ? 'text-emerald-400' : 'text-red-400'
-              }`}>
-                {weekChange.value}
-              </div>
-              <div className={`text-sm ${
-                weekChange.isPositive ? 'text-emerald-400' : 'text-red-400'
-              }`}>
-                {weekChange.percentage}
-              </div>
-            </div>
+          <div className="mb-6 grid grid-cols-2 gap-4">
+            <ChangeTile label="24h Change" change={dayChange} />
+            <ChangeTile label="7d Change" change={weekChange} />
           </div>
 
-          {/* Action Buttons */}
           <div className="flex gap-3">
-            <button className="flex-1 px-4 py-3 bg-gray-800/50 hover:bg-gray-700/70 text-white rounded-lg transition-all text-sm font-medium border border-gray-700 hover:border-gray-600 hover:shadow-md">
+            <Button variant="outline" size="lg" className="flex-1">
               View Details
-            </button>
-            <button className="flex-1 px-4 py-3 bg-gradient-to-r from-cyan-600 to-blue-600 hover:from-cyan-700 hover:to-blue-700 text-white rounded-lg transition-all text-sm font-medium shadow-lg hover:shadow-xl">
+            </Button>
+            <Button size="lg" className="flex-1">
               Rebalance
-            </button>
+            </Button>
           </div>
         </div>
       </div>
-    </div>
+    </Card>
   );
 }
