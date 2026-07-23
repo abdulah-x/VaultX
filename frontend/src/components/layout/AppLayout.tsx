@@ -22,6 +22,7 @@ import {
   Sparkles,
 } from "lucide-react";
 import { useAuth } from "@/providers/AuthProvider";
+import ThemeToggle from "@/components/ui/ThemeToggle";
 
 interface AppLayoutProps {
   children: ReactNode;
@@ -184,6 +185,8 @@ export default function AppLayout({ children }: AppLayoutProps) {
                   className="bg-transparent text-white placeholder-gray-400 outline-none text-sm w-32"
                 />
               </div>
+
+              <ThemeToggle />
 
               {/* Notifications */}
               <div className="relative" ref={notificationsRef}>
