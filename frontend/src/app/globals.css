@@ -1,5 +1,14 @@
 @import "tailwindcss";
 
+/* Tailwind v4 does not read tailwind.config.ts. Utilities are generated from
+   @theme below, and the class-based dark mode has to be declared explicitly —
+   without this, `dark:` variants never match and next-themes has nothing to
+   toggle. */
+@custom-variant dark (&:is(.dark *));
+
+/* Raw palette. These stay as bare HSL triplets so light/dark is a variable
+   swap rather than a rewrite of every utility class. @theme below wraps them
+   in hsl() to produce the actual color utilities. */
 @layer base {
   :root {
     --background: 210 40% 98%;
@@ -32,9 +41,11 @@
   .dark {
     --background: 222.2 84% 4.9%;
     --foreground: 210 40% 98%;
-    --card: 222.2 84% 4.9%;
+    /* Nudged one step off --background so cards read as raised surfaces
+       instead of dissolving into the page (they were identical before). */
+    --card: 222.2 47% 8%;
     --card-foreground: 210 40% 98%;
-    --popover: 222.2 84% 4.9%;
+    --popover: 222.2 47% 8%;
     --popover-foreground: 210 40% 98%;
     --primary: 217.2 91.2% 59.8%;
     --primary-foreground: 222.2 84% 4.9%;
@@ -55,6 +66,61 @@
     --chart-4: 280 65% 60%;
     --chart-5: 340 75% 55%;
   }
+}
+
+/* The token -> utility bridge. Ported verbatim from the old tailwind.config.ts,
+   which v4 ignored; that file is deleted. `--color-x` here is what makes
+   bg-x / text-x / border-x exist at all. */
+@theme inline {
+  --color-background: hsl(var(--background));
+  --color-foreground: hsl(var(--foreground));
+
+  --color-card: hsl(var(--card));
+  --color-card-foreground: hsl(var(--card-foreground));
+
+  --color-popover: hsl(var(--popover));
+  --color-popover-foreground: hsl(var(--popover-foreground));
+
+  --color-primary: hsl(var(--primary));
+  --color-primary-foreground: hsl(var(--primary-foreground));
+
+  --color-secondary: hsl(var(--secondary));
+  --color-secondary-foreground: hsl(var(--secondary-foreground));
+
+  --color-muted: hsl(var(--muted));
+  --color-muted-foreground: hsl(var(--muted-foreground));
+
+  --color-accent: hsl(var(--accent));
+  --color-accent-foreground: hsl(var(--accent-foreground));
+
+  --color-destructive: hsl(var(--destructive));
+  --color-destructive-foreground: hsl(var(--destructive-foreground));
+
+  --color-border: hsl(var(--border));
+  --color-input: hsl(var(--input));
+  --color-ring: hsl(var(--ring));
+
+  --color-chart-1: hsl(var(--chart-1));
+  --color-chart-2: hsl(var(--chart-2));
+  --color-chart-3: hsl(var(--chart-3));
+  --color-chart-4: hsl(var(--chart-4));
+  --color-chart-5: hsl(var(--chart-5));
+
+  /* VaultX brand colors — fixed hex, identical in both themes. */
+  --color-vaultx-primary: #6366f1;
+  --color-vaultx-secondary: #8b5cf6;
+  --color-vaultx-accent: #06b6d4;
+  --color-vaultx-success: #10b981;
+  --color-vaultx-warning: #f59e0b;
+  --color-vaultx-danger: #ef4444;
+
+  --radius-sm: calc(var(--radius) - 4px);
+  --radius-md: calc(var(--radius) - 2px);
+  --radius-lg: var(--radius);
+
+  --font-sans: var(--font-inter), system-ui, sans-serif;
+  --font-mono: var(--font-jetbrains-mono), Consolas, monospace;
+  --font-heading: var(--font-space-grotesk), system-ui, sans-serif;
 }
 
 @layer base {
