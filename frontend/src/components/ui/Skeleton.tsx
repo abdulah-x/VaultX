@@ -5,11 +5,11 @@ import { cn } from "@/lib/utils";
  * grid of these reads as motion across the whole page.
  */
 export default function Skeleton({ className, ...props }: React.HTMLAttributes<HTMLDivElement>) {
-  return (
-    <div
-      aria-hidden
-      className={cn("bg-muted animate-pulse rounded-md", className)}
-      {...props}
-    />
-  );
+ return (
+ <div
+ aria-hidden
+ className={cn("bg-muted animate-pulse rounded-md", className)}
+ {...props}
+ />
+ );
 }

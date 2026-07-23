@@ -13,25 +13,25 @@ import { Moon, Sun } from "lucide-react";
  * reports as a mismatch and the user sees as a flicker.
  */
 export default function ThemeToggle() {
-  const [mounted, setMounted] = useState(false);
-  const { resolvedTheme, setTheme } = useTheme();
+ const [mounted, setMounted] = useState(false);
+ const { resolvedTheme, setTheme } = useTheme();
 
-  useEffect(() => setMounted(true), []);
+ useEffect(() => setMounted(true), []);
 
-  const isDark = resolvedTheme === "dark";
+ const isDark = resolvedTheme === "dark";
 
-  return (
-    <button
-      type="button"
-      aria-label={mounted ? `Switch to ${isDark ? "light" : "dark"} theme` : "Switch theme"}
-      onClick={() => setTheme(isDark ? "light" : "dark")}
-      className="text-muted-foreground hover:text-foreground hover:bg-accent rounded-md p-2 transition-colors active:scale-95"
-    >
-      {mounted && !isDark ? (
-        <Sun className="h-5 w-5" />
-      ) : (
-        <Moon className="h-5 w-5" />
-      )}
-    </button>
-  );
+ return (
+ <button
+ type="button"
+ aria-label={mounted ? `Switch to ${isDark ? "light" : "dark"} theme` : "Switch theme"}
+ onClick={() => setTheme(isDark ? "light" : "dark")}
+ className="text-muted-foreground hover:text-foreground hover:bg-accent rounded-md p-2 transition-colors active:scale-95"
+ >
+ {mounted && !isDark ? (
+ <Sun className="h-5 w-5" />
+ ) : (
+ <Moon className="h-5 w-5" />
+ )}
+ </button>
+ );
 }
