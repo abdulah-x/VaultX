@@ -25,7 +25,11 @@ async def run_sync(func: Callable, *args, **kwargs):
     uses time.sleep. Calling it directly from an async handler blocks the whole
     event loop; running it here keeps the loop responsive.
     """
-    loop = asyncio.get_event_loop()
+    # get_running_loop(), not get_event_loop(): this is always called from inside
+    # a coroutine so a loop is guaranteed to be running, and get_event_loop() is
+    # deprecated in that position — it raises RuntimeError in newer Pythons, which
+    # would break all 24 call sites the moment the base image is bumped past 3.11.
+    loop = asyncio.get_running_loop()
     return await loop.run_in_executor(None, functools.partial(func, *args, **kwargs))
 
 class BinanceClientManager:
