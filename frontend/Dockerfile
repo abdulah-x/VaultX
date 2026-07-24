@@ -5,11 +5,16 @@ FROM node:20-slim AS deps
 
 WORKDIR /app
 
-COPY package.json package-lock.json* ./
+# No trailing glob on the lockfile: it is tracked now, and if it is ever
+# missing the build should fail loudly rather than quietly fall back to
+# resolving floating ^ranges at build time.
+COPY package.json package-lock.json ./
 
-# --legacy-peer-deps in case of minor peer conflicts; --no-audit / --no-fund
-# skip unnecessary network calls that can stall in constrained environments.
-RUN npm install --legacy-peer-deps --no-audit --no-fund
+# `npm ci` installs exactly the tree in the lockfile and errors if the two files
+# disagree. `npm install` would happily update the lockfile mid-build, which is
+# how identical commits ended up producing different images.
+# --no-audit / --no-fund skip network calls that can stall in constrained envs.
+RUN npm ci --legacy-peer-deps --no-audit --no-fund
 
 # ── Stage 2: Build ────────────────────────────────────────────────────────
 FROM node:20-slim AS builder
