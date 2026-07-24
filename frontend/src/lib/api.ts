@@ -91,6 +91,12 @@ export const api = {
       const response = await axiosInstance.post('/api/auth/guest');
       return response.data;
     },
+    // Exchange a Google ID token for a VaultX session. The ID token is verified
+    // server-side; nothing here is trusted.
+    googleLogin: async (token: string, context: 'signup' | 'login') => {
+      const response = await axiosInstance.post('/api/auth/google/login', { token, context });
+      return response.data;
+    },
     logout: async () => {
       const response = await axiosInstance.post('/api/auth/logout');
       return response.data;
