@@ -99,9 +99,23 @@ settings = Settings()
 # it dead code in the exact configuration this repo ships — JWTs would be silently
 # signed with a public, repo-visible constant. An explicit opt-in is required to
 # run with the default secret at all (e.g. quick local experimentation).
-if settings.secret_key == DEFAULT_INSECURE_SECRET and os.getenv("ALLOW_INSECURE_SECRET", "").lower() != "true":
-    raise RuntimeError(
-        "SECRET_KEY is still set to the insecure default. Set a strong SECRET_KEY "
-        "environment variable, or set ALLOW_INSECURE_SECRET=true to explicitly opt "
-        "into running with it (not recommended outside throwaway local testing)."
-    )
+_MIN_SECRET_LENGTH = 32
+
+if os.getenv("ALLOW_INSECURE_SECRET", "").lower() != "true":
+    if settings.secret_key == DEFAULT_INSECURE_SECRET:
+        raise RuntimeError(
+            "SECRET_KEY is still set to the insecure default. Set a strong SECRET_KEY "
+            "environment variable, or set ALLOW_INSECURE_SECRET=true to explicitly opt "
+            "into running with it (not recommended outside throwaway local testing)."
+        )
+    # An empty or short key used to slip straight through: the check above only
+    # compared against the shipped constant, so `SECRET_KEY=` (which is what an
+    # unset variable referenced in docker-compose substitutes to) was accepted
+    # and every JWT was signed with an empty string.
+    if len(settings.secret_key.strip()) < _MIN_SECRET_LENGTH:
+        raise RuntimeError(
+            f"SECRET_KEY must be at least {_MIN_SECRET_LENGTH} characters "
+            f"(got {len(settings.secret_key.strip())}). An empty value usually means an "
+            "environment variable was referenced but never defined. Generate one with: "
+            "python -c \"import secrets; print(secrets.token_urlsafe(48))\""
+        )
