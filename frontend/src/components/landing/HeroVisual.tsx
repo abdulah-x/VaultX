@@ -41,9 +41,12 @@ export default function HeroVisual() {
     setEnabled(!reduced && !weakDevice);
   }, []);
 
+  // Anchored to the top band rather than inset-0: the hero now continues into a
+  // framed product preview, and centering across the whole section would park
+  // the orb behind that card instead of behind the headline it belongs to.
   return (
-    <div className="pointer-events-none absolute inset-0 flex items-center justify-center">
-      <div className="h-[520px] w-[520px] max-w-full">
+    <div className="pointer-events-none absolute inset-x-0 top-0 -z-10 flex h-[38rem] items-center justify-center">
+      <div className="h-[520px] w-[520px] max-w-full opacity-70">
         {enabled ? <HeroScene /> : <HeroFallback />}
       </div>
     </div>
