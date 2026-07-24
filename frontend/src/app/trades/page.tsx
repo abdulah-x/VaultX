@@ -1,10 +1,12 @@
 "use client";
 
-import { useEffect, useState } from "react";
-import { useAuth } from "@/providers/AuthProvider";
-import { tradesApi } from "@/lib/api";
+import { useState } from "react";
 import AppLayout from "@/components/layout/AppLayout";
 import ProtectedRoute from "@/components/auth/ProtectedRoute";
+import Skeleton from "@/components/ui/Skeleton";
+import { useTrades } from "@/hooks/queries";
+import { extractTrades, extractPagination, aggregateTrades } from "@/lib/trades";
+import { usd, signedUsd, compactUsd, qty as fmtQty } from "@/lib/format";
 import {
   TrendingUp,
   TrendingDown,
@@ -13,247 +15,246 @@ import {
   ChevronLeft,
   ChevronRight,
   ArrowUpDown,
+  AlertCircle,
 } from "lucide-react";
-
-interface Trade {
-  id: number;
-  symbol: string;
-  base_asset?: string;
-  quote_asset?: string;
-  side: string;
-  quantity: number;
-  price: number;
-  total?: number;
-  realized_pnl_usd?: number;
-  executed_at: string;
-  status?: string;
-  fee_usd?: number;
-}
 
 const SIDE_FILTER = ["ALL", "BUY", "SELL"] as const;
 type SideFilter = (typeof SIDE_FILTER)[number];
 
-// Fallback mock trades
-function generateMockTrades(): Trade[] {
-  const pairs = [
-    { symbol: "BTCUSDT", base_asset: "BTC", quote_asset: "USDT", price: 67500 },
-    { symbol: "ETHUSDT", base_asset: "ETH", quote_asset: "USDT", price: 3420 },
-    { symbol: "SOLUSDT", base_asset: "SOL", quote_asset: "USDT", price: 148 },
-    { symbol: "ADAUSDT", base_asset: "ADA", quote_asset: "USDT", price: 0.61 },
-    { symbol: "BNBUSDT", base_asset: "BNB", quote_asset: "USDT", price: 580 },
-  ];
-  return Array.from({ length: 20 }, (_, i) => {
-    const pair = pairs[i % pairs.length];
-    const side = i % 3 === 0 ? "SELL" : "BUY";
-    const qty = parseFloat((Math.random() * 2 + 0.01).toFixed(4));
-    const price = pair.price * (1 + (Math.random() - 0.5) * 0.04);
-    const daysAgo = Math.floor(Math.random() * 30);
-    const date = new Date();
-    date.setDate(date.getDate() - daysAgo);
-    return {
-      id: i + 1,
-      symbol: pair.symbol,
-      base_asset: pair.base_asset,
-      quote_asset: pair.quote_asset,
-      side,
-      quantity: qty,
-      price: parseFloat(price.toFixed(2)),
-      total: qty * price,
-      realized_pnl_usd: side === "SELL" ? parseFloat(((Math.random() - 0.3) * qty * price * 0.05).toFixed(2)) : undefined,
-      executed_at: date.toISOString(),
-      status: "completed",
-      fee_usd: parseFloat((qty * price * 0.001).toFixed(4)),
-    };
-  }).sort((a, b) => new Date(b.executed_at).getTime() - new Date(a.executed_at).getTime());
-}
+const PAGE_SIZE = 20;
 
 export default function TradesPage() {
-  const { user } = useAuth();
-  const [trades, setTrades] = useState<Trade[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [isLive, setIsLive] = useState(false);
   const [page, setPage] = useState(1);
-  const [totalPages, setTotalPages] = useState(1);
   const [sideFilter, setSideFilter] = useState<SideFilter>("ALL");
   const [search, setSearch] = useState("");
 
-  useEffect(() => {
-    if (!user) return;
-    const fetch = async () => {
-      setLoading(true);
-      try {
-        const data = await tradesApi.list({ page, limit: 20 });
-        const raw = Array.isArray(data) ? data : data?.data ?? data?.trades ?? [];
-        setTrades(raw);
-        setTotalPages(data?.pagination?.totalPages ?? data?.total_pages ?? 1);
-        setIsLive(true);
-      } catch {
-        setTrades(generateMockTrades());
-        setTotalPages(1);
-        setIsLive(false);
-      } finally {
-        setLoading(false);
-      }
-    };
-    fetch();
-  }, [user, page]);
+  // Side is filtered server-side (the API supports it) so the counts and
+  // pagination stay consistent; the previous version filtered the current page
+  // in the browser, which made "page 2 of 3" show a handful of rows.
+  const query = useTrades({
+    page,
+    page_size: PAGE_SIZE,
+    ...(sideFilter !== "ALL" ? { side: sideFilter } : {}),
+  });
 
-  // Stats
-  const totalVolume = trades.reduce((s, t) => s + (t.quantity * t.price), 0);
-  const totalPnL = trades.reduce((s, t) => s + (t.realized_pnl_usd || 0), 0);
+  const trades = extractTrades(query.data);
+  const pagination = extractPagination(query.data);
+  const aggregates = aggregateTrades(trades);
+
+  // Symbol search stays client-side: it's a substring match over the loaded
+  // page, and the API expects a full trading pair rather than a fragment.
+  const filtered = trades.filter(
+    trade =>
+      !search ||
+      trade.symbol?.toLowerCase().includes(search.toLowerCase()) ||
+      trade.base_asset?.toLowerCase().includes(search.toLowerCase())
+  );
+
   const buys = trades.filter(t => t.side?.toUpperCase() === "BUY").length;
   const sells = trades.filter(t => t.side?.toUpperCase() === "SELL").length;
 
-  const filtered = trades.filter(t => {
-    const matchSide = sideFilter === "ALL" || t.side?.toUpperCase() === sideFilter;
-    const matchSearch = !search || t.symbol?.toLowerCase().includes(search.toLowerCase())
-      || t.base_asset?.toLowerCase().includes(search.toLowerCase());
-    return matchSide && matchSearch;
-  });
+  const stats = [
+    {
+      label: "Trades (page)",
+      value: String(pagination.totalCount || trades.length),
+      icon: Activity,
+      color: "text-primary",
+    },
+    {
+      label: "Volume (page)",
+      value: compactUsd(trades.reduce((sum, t) => sum + Math.abs(t.quote_quantity ?? 0), 0)),
+      icon: ArrowUpDown,
+      color: "text-vaultx-secondary",
+    },
+    {
+      label: "Realized P&L (page)",
+      value: signedUsd(aggregates.totalRealized),
+      icon: aggregates.totalRealized >= 0 ? TrendingUp : TrendingDown,
+      color: aggregates.totalRealized >= 0 ? "text-vaultx-success" : "text-vaultx-danger",
+    },
+    {
+      label: "Buy / Sell",
+      value: `${buys} / ${sells}`,
+      icon: Activity,
+      color: "text-primary",
+    },
+  ];
 
-  const fmt = (n: number, dec = 2) =>
-    n >= 1000 ? `$${n.toLocaleString(undefined, { maximumFractionDigits: dec })}` : `$${n.toFixed(dec)}`;
+  const changeSide = (next: SideFilter) => {
+    setSideFilter(next);
+    // Staying on page 4 of an unfiltered list while switching to a filter that
+    // has one page leaves the table empty.
+    setPage(1);
+  };
 
   return (
     <ProtectedRoute>
       <AppLayout>
-        <div className="p-6 space-y-6 max-w-7xl mx-auto">
-          {/* Header */}
-          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-            <div>
-              <h1 className="text-3xl font-bold text-white">Trade History</h1>
-              <p className="text-gray-400 mt-1">
-                Complete history of your trading activity
-              </p>
-            </div>
-            <div className={`flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-medium border ${
-              isLive
-                ? "bg-green-900/20 border-green-700/30 text-green-400"
-                : "bg-yellow-900/20 border-yellow-700/30 text-yellow-400"
-            }`}>
-              <div className={`w-1.5 h-1.5 rounded-full ${isLive ? "bg-green-400 animate-pulse" : "bg-yellow-500"}`} />
-              {isLive ? "Live Data" : "Demo Data"}
-            </div>
+        <div className="mx-auto max-w-7xl space-y-6 p-6">
+          <div>
+            <h1 className="text-foreground text-3xl font-bold">Trade History</h1>
+            <p className="text-muted-foreground mt-1">Complete history of your trading activity</p>
           </div>
 
           {/* Stats bar */}
-          <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
-            {[
-              { label: "Total Trades", value: trades.length, icon: Activity, color: "text-cyan-400" },
-              { label: "Total Volume", value: fmt(totalVolume, 0), icon: ArrowUpDown, color: "text-purple-400" },
-              { label: "Realized P&L", value: (totalPnL >= 0 ? "+" : "") + fmt(totalPnL), icon: totalPnL >= 0 ? TrendingUp : TrendingDown, color: totalPnL >= 0 ? "text-emerald-400" : "text-red-400" },
-              { label: "Buy / Sell", value: `${buys} / ${sells}`, icon: Activity, color: "text-blue-400" },
-            ].map(({ label, value, icon: Icon, color }) => (
-              <div key={label} className="bg-gray-800/50 border border-gray-700/50 rounded-xl p-4">
-                <div className="flex items-center gap-2 mb-1">
-                  <Icon className={`w-4 h-4 ${color}`} />
-                  <span className="text-xs text-gray-500 font-medium">{label}</span>
+          <div className="grid grid-cols-2 gap-4 sm:grid-cols-4">
+            {stats.map(({ label, value, icon: Icon, color }) => (
+              <div key={label} className="bg-card border-border rounded-xl border p-4">
+                <div className="mb-1 flex items-center gap-2">
+                  <Icon className={`h-4 w-4 ${color}`} />
+                  <span className="text-muted-foreground text-xs font-medium">{label}</span>
                 </div>
-                <p className={`text-lg font-bold ${color}`}>{value}</p>
+                <p className={`font-mono text-lg font-bold tabular-nums ${color}`}>{value}</p>
               </div>
             ))}
           </div>
 
           {/* Filters */}
-          <div className="flex flex-col sm:flex-row gap-3">
-            {/* Side tabs */}
-            <div className="flex bg-gray-800 rounded-lg p-1 gap-1">
+          <div className="flex flex-col gap-3 sm:flex-row">
+            <div className="bg-secondary flex gap-1 rounded-lg p-1">
               {SIDE_FILTER.map(f => (
                 <button
                   key={f}
-                  onClick={() => setSideFilter(f)}
-                  className={`px-4 py-1.5 rounded-md text-sm font-medium transition-all ${
+                  onClick={() => changeSide(f)}
+                  className={`rounded-md px-4 py-1.5 text-sm font-medium transition-all ${
                     sideFilter === f
-                      ? f === "BUY" ? "bg-emerald-600 text-white"
-                        : f === "SELL" ? "bg-red-600 text-white"
-                        : "bg-gray-600 text-white"
-                      : "text-gray-400 hover:text-white"
+                      ? "bg-primary text-primary-foreground"
+                      : "text-muted-foreground hover:text-foreground"
                   }`}
                 >
                   {f}
                 </button>
               ))}
             </div>
-            {/* Search */}
-            <div className="relative flex-1 max-w-xs">
-              <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-500" />
+            <div className="relative max-w-xs flex-1">
+              <Search className="text-muted-foreground absolute top-1/2 left-3 h-4 w-4 -translate-y-1/2" />
               <input
                 type="text"
                 placeholder="Search symbol..."
                 value={search}
                 onChange={e => setSearch(e.target.value)}
-                className="w-full pl-10 pr-4 py-2 bg-gray-800 border border-gray-700 rounded-lg text-white placeholder-gray-500 text-sm focus:outline-none focus:border-cyan-500 transition-colors"
+                className="bg-secondary border-border text-foreground placeholder:text-muted-foreground focus:border-primary w-full rounded-lg border py-2 pr-4 pl-10 text-sm transition-colors focus:outline-none"
               />
             </div>
           </div>
 
           {/* Table */}
-          <div className="bg-gray-800/50 border border-gray-700/50 rounded-2xl overflow-hidden">
-            {loading ? (
-              <div className="flex items-center justify-center py-20">
-                <div className="animate-spin rounded-full h-10 w-10 border-b-2 border-cyan-500" />
+          <div className="bg-card border-border overflow-hidden rounded-2xl border">
+            {query.isLoading ? (
+              <div className="space-y-2 p-6">
+                {[0, 1, 2, 3, 4].map(i => (
+                  <Skeleton key={i} className="h-12 rounded-lg" />
+                ))}
+              </div>
+            ) : query.isError ? (
+              <div className="flex flex-col items-center gap-3 py-20 text-center">
+                <AlertCircle className="text-vaultx-danger h-8 w-8" />
+                <p className="text-muted-foreground text-sm">
+                  {query.error?.message || "Couldn't load your trades."}
+                </p>
+                <button
+                  onClick={() => query.refetch()}
+                  className="text-primary text-sm font-medium hover:underline"
+                >
+                  Retry
+                </button>
               </div>
             ) : (
               <div className="overflow-x-auto">
                 <table className="w-full">
                   <thead>
-                    <tr className="border-b border-gray-700/50 bg-gray-900/40">
+                    <tr className="border-border bg-secondary border-b">
                       {["Date", "Pair", "Side", "Qty", "Price", "Total", "P&L", "Fee"].map(h => (
-                        <th key={h} className={`px-5 py-4 text-xs font-semibold text-gray-400 uppercase tracking-wider ${h === "Date" || h === "Pair" || h === "Side" ? "text-left" : "text-right"}`}>
+                        <th
+                          key={h}
+                          className={`text-muted-foreground px-5 py-4 text-xs font-semibold tracking-wider uppercase ${
+                            h === "Date" || h === "Pair" || h === "Side"
+                              ? "text-left"
+                              : "text-right"
+                          }`}
+                        >
                           {h}
                         </th>
                       ))}
                     </tr>
                   </thead>
-                  <tbody className="divide-y divide-gray-700/30">
+                  <tbody className="divide-border divide-y">
                     {filtered.map(trade => {
                       const isBuy = trade.side?.toUpperCase() === "BUY";
                       const pnl = trade.realized_pnl_usd;
-                      const pair = trade.base_asset && trade.quote_asset
-                        ? `${trade.base_asset}/${trade.quote_asset}`
-                        : trade.symbol;
+                      const pair =
+                        trade.base_asset && trade.quote_asset
+                          ? `${trade.base_asset}/${trade.quote_asset}`
+                          : trade.symbol;
                       return (
-                        <tr key={trade.id} className="hover:bg-gray-700/20 transition-colors">
-                          <td className="px-5 py-4 text-gray-400 text-sm whitespace-nowrap">
+                        <tr key={trade.id} className="hover:bg-secondary/60 transition-colors">
+                          <td className="text-muted-foreground px-5 py-4 text-sm whitespace-nowrap">
                             {new Date(trade.executed_at).toLocaleDateString()}{" "}
-                            <span className="text-gray-600 text-xs">
-                              {new Date(trade.executed_at).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}
+                            <span className="text-muted-foreground text-xs">
+                              {new Date(trade.executed_at).toLocaleTimeString([], {
+                                hour: "2-digit",
+                                minute: "2-digit",
+                              })}
                             </span>
                           </td>
-                          <td className="px-5 py-4 text-white font-semibold">{pair}</td>
+                          <td className="text-foreground px-5 py-4 font-semibold">{pair}</td>
                           <td className="px-5 py-4">
-                            <span className={`px-2.5 py-1 rounded-full text-xs font-bold ${
-                              isBuy ? "bg-emerald-900/40 text-emerald-400" : "bg-red-900/40 text-red-400"
-                            }`}>
+                            <span
+                              className={`rounded-full px-2.5 py-1 text-xs font-bold ${
+                                isBuy
+                                  ? "bg-vaultx-success/20 text-vaultx-success"
+                                  : "bg-vaultx-danger/20 text-vaultx-danger"
+                              }`}
+                            >
                               {trade.side?.toUpperCase()}
                             </span>
                           </td>
-                          <td className="px-5 py-4 text-right text-white font-mono text-sm">{trade.quantity}</td>
-                          <td className="px-5 py-4 text-right text-white font-mono text-sm">
-                            {fmt(trade.price)}
+                          <td className="text-foreground px-5 py-4 text-right font-mono text-sm tabular-nums">
+                            {fmtQty(trade.quantity)}
                           </td>
-                          <td className="px-5 py-4 text-right text-gray-300 font-mono text-sm">
-                            {fmt(trade.quantity * trade.price)}
+                          <td className="text-foreground px-5 py-4 text-right font-mono text-sm tabular-nums">
+                            {usd(trade.price)}
                           </td>
-                          <td className="px-5 py-4 text-right text-sm font-semibold">
-                            {pnl !== undefined ? (
-                              <span className={pnl >= 0 ? "text-emerald-400" : "text-red-400"}>
-                                {pnl >= 0 ? "+" : ""}{fmt(pnl)}
+                          <td className="text-foreground px-5 py-4 text-right font-mono text-sm tabular-nums">
+                            {/*
+                              quote_quantity is the executed notional as the
+                              exchange reported it. Recomputing qty * price
+                              silently disagrees with it on partial fills.
+                            */}
+                            {usd(trade.quote_quantity ?? trade.quantity * trade.price)}
+                          </td>
+                          <td className="px-5 py-4 text-right font-mono text-sm font-semibold tabular-nums">
+                            {pnl !== null && pnl !== undefined ? (
+                              <span
+                                className={
+                                  pnl >= 0 ? "text-vaultx-success" : "text-vaultx-danger"
+                                }
+                              >
+                                {signedUsd(pnl)}
                               </span>
                             ) : (
-                              <span className="text-gray-600">—</span>
+                              <span className="text-muted-foreground">—</span>
                             )}
                           </td>
-                          <td className="px-5 py-4 text-right text-gray-500 text-xs">
-                            {trade.fee_usd !== undefined ? `$${trade.fee_usd}` : "—"}
+                          <td className="text-muted-foreground px-5 py-4 text-right font-mono text-xs tabular-nums">
+                            {trade.commission !== undefined && trade.commission !== null
+                              ? `${fmtQty(trade.commission)} ${trade.commission_asset ?? ""}`.trim()
+                              : "—"}
                           </td>
                         </tr>
                       );
                     })}
                     {filtered.length === 0 && (
                       <tr>
-                        <td colSpan={8} className="px-6 py-16 text-center text-gray-500">
-                          No trades found
+                        <td
+                          colSpan={8}
+                          className="text-muted-foreground px-6 py-16 text-center text-sm"
+                        >
+                          {search
+                            ? `No trades matching "${search}"`
+                            : sideFilter !== "ALL"
+                              ? `No ${sideFilter} trades yet`
+                              : "No trades yet. Import your history to see it here."}
                         </td>
                       </tr>
                     )}
@@ -262,23 +263,25 @@ export default function TradesPage() {
               </div>
             )}
 
-            {/* Pagination */}
-            {totalPages > 1 && (
-              <div className="px-6 py-4 border-t border-gray-700/30 flex flex-col sm:flex-row gap-4 items-center justify-between">
+            {pagination.totalPages > 1 && (
+              <div className="border-border flex flex-col items-center justify-between gap-4 border-t px-6 py-4 sm:flex-row">
                 <button
                   onClick={() => setPage(p => Math.max(1, p - 1))}
-                  disabled={page === 1}
-                  className="flex items-center gap-1.5 px-3 py-2 bg-gray-700 text-white rounded-lg disabled:opacity-40 hover:bg-gray-600 transition-colors text-sm"
+                  disabled={!pagination.hasPrevious}
+                  className="bg-secondary text-foreground hover:bg-accent flex items-center gap-1.5 rounded-lg px-3 py-2 text-sm transition-colors disabled:opacity-40"
                 >
-                  <ChevronLeft className="w-4 h-4" /> Previous
+                  <ChevronLeft className="h-4 w-4" /> Previous
                 </button>
-                <span className="text-gray-400 text-sm">Page {page} of {totalPages}</span>
+                <span className="text-muted-foreground text-sm">
+                  Page {pagination.page} of {pagination.totalPages} · {pagination.totalCount}{" "}
+                  trades
+                </span>
                 <button
-                  onClick={() => setPage(p => Math.min(totalPages, p + 1))}
-                  disabled={page === totalPages}
-                  className="flex items-center gap-1.5 px-3 py-2 bg-gray-700 text-white rounded-lg disabled:opacity-40 hover:bg-gray-600 transition-colors text-sm"
+                  onClick={() => setPage(p => p + 1)}
+                  disabled={!pagination.hasNext}
+                  className="bg-secondary text-foreground hover:bg-accent flex items-center gap-1.5 rounded-lg px-3 py-2 text-sm transition-colors disabled:opacity-40"
                 >
-                  Next <ChevronRight className="w-4 h-4" />
+                  Next <ChevronRight className="h-4 w-4" />
                 </button>
               </div>
             )}

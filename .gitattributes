@@ -1,0 +1,15 @@
+# Shell scripts must keep LF endings regardless of the checkout platform.
+#
+# This repo is developed on Windows, where git's autocrlf would otherwise hand
+# entrypoint.sh to the Linux container with CRLF line endings. The kernel then
+# reads the shebang as "/bin/sh\r" and the container dies with
+# "bad interpreter: no such file or directory" -- a failure that only appears
+# inside Docker and never locally.
+*.sh text eol=lf
+
+# Same reasoning for the Dockerfiles' RUN lines and for compose/env files that
+# get sourced inside containers.
+DockerFile text eol=lf
+Dockerfile text eol=lf
+*.yml text eol=lf
+*.yaml text eol=lf

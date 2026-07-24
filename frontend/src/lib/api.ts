@@ -91,6 +91,12 @@ export const api = {
       const response = await axiosInstance.post('/api/auth/guest');
       return response.data;
     },
+    // Exchange a Google ID token for a VaultX session. The ID token is verified
+    // server-side; nothing here is trusted.
+    googleLogin: async (token: string, context: 'signup' | 'login') => {
+      const response = await axiosInstance.post('/api/auth/google/login', { token, context });
+      return response.data;
+    },
     logout: async () => {
       const response = await axiosInstance.post('/api/auth/logout');
       return response.data;
@@ -103,22 +109,28 @@ export const api = {
       const response = await axiosInstance.put('/api/auth/profile', data);
       return response.data;
     },
-    refreshToken: async (refreshToken: string) => {
-      const response = await axiosInstance.post('/api/auth/refresh', {
-        refresh_token: refreshToken,
-      });
-      return response.data;
-    },
   },
 
   // Portfolio endpoints
   portfolio: {
+    // Both return { success, portfolio_summary: { ...totals, holdings: [] } }.
+    // The totals are DECIMAL strings, not numbers -- parse with lib/format.
     get: async () => {
       const response = await axiosInstance.get('/api/portfolio');
       return response.data;
     },
-    getEnhanced: async () => {
-      const response = await axiosInstance.get('/api/portfolio/enhanced');
+    summary: async () => {
+      const response = await axiosInstance.get('/api/portfolio/summary');
+      return response.data;
+    },
+    holdings: async () => {
+      const response = await axiosInstance.get('/api/portfolio/holdings');
+      return response.data;
+    },
+    // The richest portfolio endpoint: adds realized/today capital-gain splits
+    // and an IRR growth rate that /summary does not carry.
+    kpis: async () => {
+      const response = await axiosInstance.get('/api/portfolio/kpis');
       return response.data;
     },
     sync: async () => {
@@ -129,40 +141,50 @@ export const api = {
       const response = await axiosInstance.get('/api/portfolio/performance');
       return response.data;
     },
-    optimize: async () => {
-      const response = await axiosInstance.get('/api/portfolio/optimize');
+    optimize: async (lookbackDays?: number) => {
+      const response = await axiosInstance.get('/api/portfolio/optimize', {
+        params: lookbackDays ? { lookback_days: lookbackDays } : {},
+      });
       return response.data;
     },
   },
 
   // AI Advisor endpoints
   advisor: {
-    chat: async (message: string) => {
-      const response = await axiosInstance.post('/api/advisor/chat', { message });
+    // The backend field is `question`, not `message` -- sending the wrong key
+    // produced a 422 on every call, so the advisor never worked.
+    chat: async (question: string) => {
+      const response = await axiosInstance.post('/api/advisor/chat', { question });
       return response.data;
     },
   },
 
-  // Trades endpoints
+  // DCA strategy backtesting
+  strategy: {
+    dcaBacktest: async (params: {
+      symbol: string;
+      contribution?: number;
+      frequency?: string;
+      lookback_days?: number;
+    }) => {
+      const response = await axiosInstance.get('/api/strategy/dca-backtest', { params });
+      return response.data;
+    },
+    dcaPresets: async (params?: { contribution?: number; lookback_days?: number }) => {
+      const response = await axiosInstance.get('/api/strategy/dca-presets', { params });
+      return response.data;
+    },
+  },
+
+  // Trades endpoints. Read-only plus import: the API exposes no create/update/
+  // delete for trades, so the client no longer pretends otherwise.
   trades: {
     list: async (params?: any) => {
       const response = await axiosInstance.get('/api/trades', { params });
       return response.data;
     },
-    get: async (tradeId: number) => {
-      const response = await axiosInstance.get(`/api/trades/${tradeId}`);
-      return response.data;
-    },
-    create: async (data: any) => {
-      const response = await axiosInstance.post('/api/trades', data);
-      return response.data;
-    },
-    update: async (tradeId: number, data: any) => {
-      const response = await axiosInstance.put(`/api/trades/${tradeId}`, data);
-      return response.data;
-    },
-    delete: async (tradeId: number) => {
-      const response = await axiosInstance.delete(`/api/trades/${tradeId}`);
+    stats: async () => {
+      const response = await axiosInstance.get('/api/trades/stats');
       return response.data;
     },
     import: async (data: any) => {
@@ -173,30 +195,42 @@ export const api = {
 
   // P&L endpoints
   pnl: {
-    calculate: async (params?: any) => {
-      const response = await axiosInstance.get('/api/pnl/calculate', { params });
-      return response.data;
-    },
-    advanced: async (params?: any) => {
-      const response = await axiosInstance.get('/api/pnl/advanced', { params });
+    // Numeric (float) responses, unlike the portfolio endpoints.
+    comprehensive: async () => {
+      const response = await axiosInstance.get('/api/pnl/comprehensive');
       return response.data;
     },
     summary: async () => {
       const response = await axiosInstance.get('/api/pnl/summary');
       return response.data;
     },
+    performance: async () => {
+      const response = await axiosInstance.get('/api/pnl/performance');
+      return response.data;
+    },
   },
 
   // Prices endpoints
   prices: {
-    getRealtime: async (symbols?: string[]) => {
+    // /api/prices/current -- the previous '/api/prices/realtime' does not exist
+    // on the API, so every ticker fetch 404'd and fell back to placeholders.
+    getCurrent: async (symbols?: string[]) => {
       const params = symbols ? { symbols: symbols.join(',') } : {};
-      const response = await axiosInstance.get('/api/prices/realtime', { params });
+      const response = await axiosInstance.get('/api/prices/current', { params });
       return response.data;
     },
-    getHistorical: async (symbol: string, interval: string, limit?: number) => {
-      const response = await axiosInstance.get('/api/prices/historical', {
-        params: { symbol, interval, limit },
+    /**
+     * 24h ticker for one symbol: last price, absolute change and percent change.
+     * /prices/current is a single cheap call but carries no 24h delta, so
+     * anything showing a percentage has to come through here.
+     */
+    getTicker: async (symbol: string) => {
+      const response = await axiosInstance.get(`/api/market/ticker/${symbol}`);
+      return response.data;
+    },
+    getKlines: async (symbol: string, interval: string, limit?: number) => {
+      const response = await axiosInstance.get(`/api/market/klines/${symbol}`, {
+        params: { interval, limit },
       });
       return response.data;
     },
@@ -212,8 +246,8 @@ export const api = {
       const response = await axiosInstance.get('/api/binance/account');
       return response.data;
     },
-    syncPortfolio: async () => {
-      const response = await axiosInstance.post('/api/binance/sync');
+    getConnection: async () => {
+      const response = await axiosInstance.get('/api/binance/connection');
       return response.data;
     },
   },
@@ -252,5 +286,7 @@ export const tradesApi = api.trades;
 export const pnlApi = api.pnl;
 export const pricesApi = api.prices;
 export const binanceApi = api.binance;
+export const advisorApi = api.advisor;
+export const strategyApi = api.strategy;
 
 export default api;

@@ -1,8 +1,6 @@
 "use client";
 
-import { useState, useEffect } from "react";
-import { useAuth } from "@/providers/AuthProvider";
-import { api } from "@/lib/api";
+import { useState } from "react";
 import ProtectedRoute from "@/components/auth/ProtectedRoute";
 import AppLayout from "@/components/layout/AppLayout";
 import MetricCard from "@/components/ui/MetricCard";
@@ -11,352 +9,225 @@ import HoldingsTable from "@/components/dashboard/HoldingsTable";
 import PortfolioOverview from "@/components/dashboard/PortfolioOverview";
 import PortfolioHeatmap from "@/components/dashboard/PortfolioHeatmap";
 import LivePriceTicker from "@/components/dashboard/LivePriceTicker";
+import Skeleton from "@/components/ui/Skeleton";
+import { usePortfolio, usePortfolioKpis, usePnlPerformance } from "@/hooks/queries";
+import { buildRealizedPnlSeries } from "@/lib/performance";
+import { assetColor } from "@/types/portfolio";
+import { usd, signedUsd, signedPct, toNum } from "@/lib/format";
 import {
   DollarSign,
   TrendingUp,
   PieChart as PieChartIcon,
   Target,
+  AlertCircle,
+  Wallet,
 } from "lucide-react";
-
-import {
-  generateUserMockData,
-  mockAllocationData,
-  mockHoldingsData,
-  mockPerformanceData
-} from "@/data/mockData";
 
 export default function DashboardPage() {
   const [selectedTimeframe, setSelectedTimeframe] = useState("30D");
-  const { user } = useAuth();
 
-  // Backend data states
-  const [portfolioData, setPortfolioData] = useState<any>(null);
-  const [backendDataLoading, setBackendDataLoading] = useState(true);
-  const [backendError, setBackendError] = useState<string | null>(null);
-  const [binanceData, setBinanceData] = useState<any>(null);
+  const portfolio = usePortfolio();
+  const kpis = usePortfolioKpis();
+  const performance = usePnlPerformance();
 
-  // Get filtered performance data based on timeframe
-  const getPerformanceData = (timeframe: string) => {
-    return mockPerformanceData[timeframe as keyof typeof mockPerformanceData] || mockPerformanceData['30D'];
-  };
+  const totals = portfolio.data?.totals;
+  const holdings = portfolio.data?.holdings ?? [];
 
-  const handleTimeframeChange = (timeframe: string) => {
-    setSelectedTimeframe(timeframe);
-  };
+  // /portfolio/kpis splits the capital gain into realized, unrealized and
+  // today's move -- none of which /portfolio/summary carries, which is why the
+  // Realized P&L card used to be hardcoded to $0.
+  const capitalGain = kpis.data?.kpis?.capital_gain;
+  const irr = kpis.data?.kpis?.growth_rate?.irr_percent;
 
-  // Load portfolio data from backend
-  useEffect(() => {
-    const loadDashboardData = async () => {
-      if (!user) {
-        setBackendDataLoading(false);
-        return;
-      }
-
-      try {
-        setBackendDataLoading(true);
-        setBackendError(null);
-        
-        // Fetch portfolio data
-        const [portfolioResponse, holdingsResponse] = await Promise.allSettled([
-          api.getPortfolioSummary(),
-          api.getHoldings(),
-        ]);
-        
-        if (portfolioResponse.status === 'fulfilled' && portfolioResponse.value.success) {
-          setPortfolioData(portfolioResponse.value);
-          console.log('✅ Portfolio data loaded from backend:', portfolioResponse.value);
-        }
-        
-        // Try to fetch Binance data
-        try {
-          const binanceResponse = await api.getBinanceAccountInfo();
-          if (binanceResponse.success) {
-            setBinanceData(binanceResponse.data);
-            console.log('✅ Binance test data loaded:', binanceResponse.data);
-          }
-        } catch (binanceError) {
-          console.info('📊 Binance test data not available, using mock data');
-        }
-        
-      } catch (error: any) {
-        // Handle backend connectivity gracefully
-        if (error.message && error.message.includes('Backend service is not available')) {
-          console.info('📡 Backend not running - using demo data for dashboard');
-          setBackendError(null); // Don't show error for expected dev scenario
-        } else {
-          console.warn('⚠️ API error:', error.message);
-          setBackendError(error.message || 'Failed to load portfolio data');
-        }
-        // Continue with mock data when backend is not available
-      } finally {
-        setBackendDataLoading(false);
-      }
-    };
-
-    loadDashboardData();
-  }, [user]);
-
-  // Generate user-specific mock data
-  const userMockData = user ? generateUserMockData(user.id, user.email) : null;
-  const mockPortfolioMetrics = userMockData?.mockPortfolioMetrics || {
-    totalCapital: { value: "$0", change24h: { value: "$0", percentage: "0%", isPositive: true } },
-    unrealizedPnL: { value: "$0", change24h: { value: "$0", percentage: "0%", isPositive: true } },
-    realizedPnL: { value: "$0", change24h: { value: "$0", percentage: "0%", isPositive: true } },
-    successRate: { percentage: "0%", profitFromWins: "0", totalTrades: 0, winningTrades: 0 }
-  };
-
-  // Use real backend data if available, otherwise use mock data
-  const portfolioMetrics = portfolioData ? {
-    totalCapital: {
-      value: `$${portfolioData.portfolio_summary?.total_portfolio_value_usd?.toLocaleString() || '0'}`,
-      change24h: {
-        value: `$${portfolioData.portfolio_summary?.total_unrealized_pnl_usd?.toLocaleString() || '0'}`,
-        percentage: `${portfolioData.portfolio_summary?.total_unrealized_pnl_percentage?.toFixed(2) || '0'}%`,
-        isPositive: (portfolioData.portfolio_summary?.total_unrealized_pnl_usd || 0) >= 0
-      }
-    },
-    unrealizedPnL: {
-      value: `$${portfolioData.portfolio_summary?.total_unrealized_pnl_usd?.toLocaleString() || '0'}`,
-      change24h: {
-        value: `$${portfolioData.portfolio_summary?.total_unrealized_pnl_usd?.toLocaleString() || '0'}`,
-        percentage: `${portfolioData.portfolio_summary?.total_unrealized_pnl_percentage?.toFixed(2) || '0'}%`,
-        isPositive: (portfolioData.portfolio_summary?.total_unrealized_pnl_usd || 0) >= 0
-      }
-    },
-    realizedPnL: {
-      value: "$0",
-      change24h: { value: "$0", percentage: "0%", isPositive: true }
-    },
-    successRate: {
-      percentage: "N/A",
-      profitFromWins: "0",
-      totalTrades: 0,
-      winningTrades: 0
-    }
-  } : mockPortfolioMetrics;
-
-  // Transform backend holdings to component format
-  const transformedHoldings = portfolioData?.portfolio_summary?.holdings?.map((holding: any, index: number) => ({
-    id: `${holding.asset_symbol}-${index}`,
-    asset: holding.asset_name,
-    symbol: holding.asset_symbol,
-    qty: parseFloat(holding.total_quantity) || 0,
-    avgBuyPrice: parseFloat(holding.average_cost_usd) || 0,
-    lastPrice: parseFloat(holding.current_price_usd) || 0,
-    marketValue: parseFloat(holding.current_value_usd) || 0,
-    realizedPnL: 0,
-    unrealizedPnL: parseFloat(holding.unrealized_pnl_usd) || 0,
-    allocation: parseFloat(holding.portfolio_percentage) || 0,
-    change24h: parseFloat(holding.unrealized_pnl_percentage) || 0,
-  })) || [];
-
-  const holdings = transformedHoldings.length > 0 ? transformedHoldings : mockHoldingsData;
-  const totalPortfolioValue = portfolioData?.portfolio_summary?.total_portfolio_value_usd || 
-    mockHoldingsData.reduce((sum, holding) => sum + holding.marketValue, 0);
-
-  // Transform holdings to allocation data for donut chart
-  const assetColors: { [key: string]: string } = {
-    'BTC': '#f7931a',
-    'ETH': '#627eea',
-    'BNB': '#f3ba2f',
-    'SOL': '#00d4aa',
-    'ADA': '#0033ad',
-    'DOT': '#e6007a',
-    'MATIC': '#8247e5',
-    'AVAX': '#e84142',
-    'LINK': '#2a5ada',
-    'UNI': '#ff007a',
-  };
+  const performanceData = buildRealizedPnlSeries(performance.data, selectedTimeframe);
 
   const allocationData = holdings.map(holding => ({
     asset: holding.symbol,
     value: holding.marketValue,
     percentage: holding.allocation,
-    color: assetColors[holding.symbol] || '#8b5cf6'
+    color: assetColor(holding.symbol),
   }));
 
-  // Generate realistic historical performance data based on current portfolio
-  const generatePerformanceData = (timeframe: string) => {
-    // Use mock data if no real portfolio data yet
-    if (!portfolioData || transformedHoldings.length === 0 || totalPortfolioValue === 0) {
-      return getPerformanceData(timeframe);
-    }
+  const isLoading = portfolio.isLoading;
+  const hasHoldings = holdings.length > 0;
 
-    const currentValue = totalPortfolioValue;
-    const currentUnrealizedPnL = portfolioData?.portfolio_summary?.total_unrealized_pnl_usd || 0;
-    const currentRealizedPnL = 0; // We don't have this data yet
+  if (isLoading) {
+    return (
+      <ProtectedRoute>
+        <AppLayout>
+          <LivePriceTicker />
+          <div className="p-6 space-y-6">
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
+              {[0, 1, 2, 3].map(i => (
+                <Skeleton key={i} className="h-32 rounded-lg" />
+              ))}
+            </div>
+            <div className="grid grid-cols-1 xl:grid-cols-5 gap-6">
+              <Skeleton className="xl:col-span-3 h-[400px] rounded-lg" />
+              <Skeleton className="xl:col-span-2 h-[400px] rounded-lg" />
+            </div>
+            <Skeleton className="h-64 rounded-lg" />
+          </div>
+        </AppLayout>
+      </ProtectedRoute>
+    );
+  }
 
-    const configs: { [key: string]: { days: number; points: number } } = {
-      '7D': { days: 7, points: 8 },
-      '30D': { days: 30, points: 10 },
-      '90D': { days: 90, points: 11 },
-      '1Y': { days: 365, points: 12 },
-      'ALL': { days: 730, points: 9 }
-    };
+  if (portfolio.isError) {
+    return (
+      <ProtectedRoute>
+        <AppLayout>
+          <div className="p-6">
+            <div className="max-w-md mx-auto text-center py-16">
+              <AlertCircle className="w-10 h-10 text-vaultx-danger mx-auto mb-4" />
+              <h2 className="text-xl font-semibold text-foreground mb-2">
+                Couldn&apos;t load your portfolio
+              </h2>
+              <p className="text-muted-foreground text-sm mb-6">
+                {portfolio.error?.message || "The portfolio service didn't respond."}
+              </p>
+              <button
+                onClick={() => portfolio.refetch()}
+                className="px-4 py-2 bg-primary text-primary-foreground rounded-lg text-sm font-medium hover:opacity-90 transition-opacity"
+              >
+                Try again
+              </button>
+            </div>
+          </div>
+        </AppLayout>
+      </ProtectedRoute>
+    );
+  }
 
-    const config = configs[timeframe] || configs['30D'];
-    const { days, points } = config;
-    const data = [];
-    
-    // Generate dates from oldest to newest
-    for (let i = 0; i < points; i++) {
-      const daysAgo = Math.floor(((points - 1 - i) / (points - 1)) * days);
-      const date = new Date();
-      date.setDate(date.getDate() - daysAgo);
-      
-      let dateLabel;
-      if (i === points - 1) {
-        dateLabel = 'Today';
-      } else if (timeframe === '7D') {
-        dateLabel = date.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
-      } else if (timeframe === '1Y') {
-        dateLabel = date.toLocaleDateString('en-US', { month: 'short' });
-      } else if (timeframe === 'ALL') {
-        dateLabel = date.toLocaleDateString('en-US', { month: 'short', year: '2-digit' });
-      } else {
-        dateLabel = date.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
-      }
-
-      // Calculate progress from oldest (0) to newest (1)
-      const progress = i / (points - 1);
-      
-      // Total Value: Steady growth from 70% to 100%
-      const growthFactor = 0.7 + (progress * 0.3);
-      const portfolioVolatility = (Math.random() - 0.5) * 0.06; // ±3% variation
-      const historicalValue = currentValue * growthFactor * (1 + portfolioVolatility);
-      
-      // Unrealized PnL: More volatile, starts negative/low and grows to current
-      // Simulate the journey of holdings going from underwater to profitable
-      const unrealizedStart = -currentUnrealizedPnL * 0.3; // Start at -30% of current
-      const unrealizedRange = currentUnrealizedPnL - unrealizedStart;
-      const unrealizedProgress = Math.pow(progress, 1.5); // Accelerating growth
-      const unrealizedVolatility = (Math.random() - 0.5) * currentUnrealizedPnL * 0.15; // ±15% variation
-      const historicalUnrealizedPnL = unrealizedStart + (unrealizedRange * unrealizedProgress) + unrealizedVolatility;
-      
-      // Realized PnL: Simulate gradual profit-taking (grows slower, more steady)
-      // Assume realized PnL would be ~40% of current unrealized if we had sold along the way
-      const estimatedRealizedPnL = currentUnrealizedPnL * 0.4;
-      const realizedProgress = Math.pow(progress, 2); // Slower, more gradual growth
-      const historicalRealizedPnL = estimatedRealizedPnL * realizedProgress;
-      
-      data.push({
-        date: dateLabel,
-        totalValue: Math.round(historicalValue),
-        realizedPnL: Math.round(historicalRealizedPnL),
-        unrealizedPnL: Math.round(historicalUnrealizedPnL)
-      });
-    }
-    
-    return data;
-  };
+  // A funded account and an empty one are different states, and showing zeroed
+  // metric cards for the latter reads as a bug rather than as "nothing here yet".
+  if (!hasHoldings) {
+    return (
+      <ProtectedRoute>
+        <AppLayout>
+          <LivePriceTicker />
+          <div className="p-6">
+            <div className="max-w-md mx-auto text-center py-16">
+              <Wallet className="w-10 h-10 text-muted-foreground mx-auto mb-4" />
+              <h2 className="text-xl font-semibold text-foreground mb-2">No holdings yet</h2>
+              <p className="text-muted-foreground text-sm mb-6">
+                Connect an exchange or import your trade history, and your portfolio,
+                P&amp;L and analytics will populate from it.
+              </p>
+              <div className="flex flex-col sm:flex-row gap-3 justify-center">
+                <a
+                  href="/settings"
+                  className="px-4 py-2 bg-primary text-primary-foreground rounded-lg text-sm font-medium hover:opacity-90 transition-opacity"
+                >
+                  Connect an exchange
+                </a>
+                <a
+                  href="/trades"
+                  className="px-4 py-2 border border-border text-foreground rounded-lg text-sm font-medium hover:bg-accent transition-colors"
+                >
+                  Import trades
+                </a>
+              </div>
+            </div>
+          </div>
+        </AppLayout>
+      </ProtectedRoute>
+    );
+  }
 
   return (
     <ProtectedRoute>
       <AppLayout>
-        {/* Live price ticker strip */}
         <LivePriceTicker />
 
         <div className="p-6 space-y-6">
-          {/* Backend Status Banner */}
-          {portfolioData && !backendDataLoading && (
-            <div className="bg-cyan-900/20 border border-cyan-700/30 rounded-lg p-4">
-              <div className="flex items-center gap-3">
-                <div className="w-2 h-2 bg-cyan-500 rounded-full animate-pulse"></div>
-                <p className="text-cyan-300 text-sm">
-                  📊 Real backend data loaded - Showing your actual portfolio
-                </p>
-              </div>
-            </div>
-          )}
-
           {/* Top KPI Cards */}
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
             <MetricCard
               title="Total Capital"
-              value={portfolioMetrics.totalCapital.value}
+              value={usd(totals?.totalValue)}
               change={{
-                value: portfolioMetrics.totalCapital.change24h.value,
-                percentage: portfolioMetrics.totalCapital.change24h.percentage,
-                isPositive: portfolioMetrics.totalCapital.change24h.isPositive
+                value: signedUsd(capitalGain?.today_usd ?? 0),
+                percentage: signedPct(capitalGain?.today_percent ?? 0),
+                isPositive: toNum(capitalGain?.today_usd) >= 0,
               }}
-              icon={<DollarSign className="w-5 h-5 text-cyan-500" />}
+              icon={<DollarSign className="w-5 h-5 text-primary" />}
             />
             <MetricCard
               title="Unrealized P&L"
-              value={portfolioMetrics.unrealizedPnL.value}
+              value={signedUsd(totals?.unrealizedPnL)}
               change={{
-                value: portfolioMetrics.unrealizedPnL.change24h.value,
-                percentage: portfolioMetrics.unrealizedPnL.change24h.percentage,
-                isPositive: portfolioMetrics.unrealizedPnL.change24h.isPositive
+                value: `on ${usd(totals?.totalCost)} invested`,
+                percentage: signedPct(totals?.unrealizedPnLPercent),
+                isPositive: (totals?.unrealizedPnL ?? 0) >= 0,
               }}
-              icon={<TrendingUp className="w-5 h-5 text-amber-500" />}
+              icon={<TrendingUp className="w-5 h-5 text-vaultx-warning" />}
             />
             <MetricCard
               title="Realized P&L"
-              value={portfolioMetrics.realizedPnL.value}
+              value={signedUsd(capitalGain?.realized_usd ?? 0)}
               change={{
-                value: portfolioMetrics.realizedPnL.change24h.value,
-                percentage: portfolioMetrics.realizedPnL.change24h.percentage,
-                isPositive: portfolioMetrics.realizedPnL.change24h.isPositive
+                value: "closed positions",
+                isPositive: toNum(capitalGain?.realized_usd) >= 0,
               }}
-              icon={<Target className="w-5 h-5 text-emerald-500" />}
+              icon={<Target className="w-5 h-5 text-vaultx-success" />}
             />
             <MetricCard
-              title="Success Rate"
-              value={portfolioMetrics.successRate.percentage}
+              title="Growth Rate (IRR)"
+              value={irr !== undefined && irr !== null ? signedPct(irr) : "—"}
               change={{
-                value: `${portfolioMetrics.successRate.winningTrades} / ${portfolioMetrics.successRate.totalTrades} trades`,
-                isPositive: true
+                value: `${totals?.assetCount ?? 0} assets held`,
+                isPositive: toNum(irr) >= 0,
               }}
-              icon={<PieChartIcon className="w-5 h-5 text-blue-500" />}
+              icon={<PieChartIcon className="w-5 h-5 text-primary" />}
             />
           </div>
 
-          {/* 2-Column Layout: Portfolio Growth (60%) + Portfolio Overview (40%) */}
+          {/* Performance + allocation */}
           <div className="grid grid-cols-1 xl:grid-cols-5 gap-6">
-            {/* Portfolio Growth Chart - Takes up 60% (3/5) */}
-            <div className="xl:col-span-3" style={{ minHeight: '400px' }}>
+            <div className="xl:col-span-3" style={{ minHeight: "400px" }}>
+              {/*
+                Only the realized-P&L series is drawn. The backend records no
+                daily portfolio balance, so a "total value over time" line would
+                have to be invented -- which is exactly what this page used to do.
+              */}
               <PerformanceChart
-                data={generatePerformanceData(selectedTimeframe)}
+                data={performanceData}
                 timeframe={selectedTimeframe}
-                onTimeframeChange={handleTimeframeChange}
+                onTimeframeChange={setSelectedTimeframe}
+                series={["realizedPnL"]}
+                title="Realized P&L Over Time"
+                emptyMessage={
+                  performance.isLoading
+                    ? "Loading performance history…"
+                    : "No closed trades in this period yet. Realized P&L appears here once you sell a position."
+                }
               />
             </div>
-            
-            {/* Portfolio Overview Donut Chart - Takes up 40% (2/5) */}
-            <div className="xl:col-span-2" style={{ minHeight: '400px' }}>
-              <PortfolioOverview 
-                totalBalance={`$${totalPortfolioValue.toLocaleString()}`}
+
+            <div className="xl:col-span-2" style={{ minHeight: "400px" }}>
+              <PortfolioOverview
+                totalBalance={usd(totals?.totalValue)}
                 allocationData={allocationData}
+                dayChangeLabel="Today"
+                weekChangeLabel="Unrealized"
                 dayChange={{
-                  value: `$${(portfolioData?.portfolio_summary?.total_unrealized_pnl_usd || 0).toLocaleString()}`,
-                  percentage: `${(portfolioData?.portfolio_summary?.total_unrealized_pnl_percentage || 0).toFixed(2)}%`,
-                  isPositive: (portfolioData?.portfolio_summary?.total_unrealized_pnl_usd || 0) >= 0
+                  value: signedUsd(capitalGain?.today_usd ?? 0),
+                  percentage: signedPct(capitalGain?.today_percent ?? 0),
+                  isPositive: toNum(capitalGain?.today_usd) >= 0,
                 }}
                 weekChange={{
-                  value: `$${(portfolioData?.portfolio_summary?.total_unrealized_pnl_usd || 0).toLocaleString()}`,
-                  percentage: `${(portfolioData?.portfolio_summary?.total_unrealized_pnl_percentage || 0).toFixed(2)}%`,
-                  isPositive: (portfolioData?.portfolio_summary?.total_unrealized_pnl_usd || 0) >= 0
+                  value: signedUsd(totals?.unrealizedPnL),
+                  percentage: signedPct(totals?.unrealizedPnLPercent),
+                  isPositive: (totals?.unrealizedPnL ?? 0) >= 0,
                 }}
               />
             </div>
           </div>
 
-          {/* Holdings Table - Full Width */}
-          <div>
-            <HoldingsTable 
-              holdings={holdings}
-              totalValue={totalPortfolioValue}
-            />
-          </div>
+          <HoldingsTable holdings={holdings} totalValue={totals?.totalValue ?? 0} />
 
-          {/* Portfolio Heatmap - Full Width Modern Visualization */}
-          <div>
-            <PortfolioHeatmap 
-              holdings={holdings}
-              totalValue={totalPortfolioValue}
-            />
-          </div>
+          <PortfolioHeatmap holdings={holdings} totalValue={totals?.totalValue ?? 0} />
         </div>
       </AppLayout>
     </ProtectedRoute>

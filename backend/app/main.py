@@ -4,6 +4,7 @@ from fastapi.responses import JSONResponse
 from fastapi.exceptions import RequestValidationError
 from sqlalchemy.exc import SQLAlchemyError
 from binance.exceptions import BinanceAPIException
+from contextlib import asynccontextmanager
 from datetime import datetime
 import asyncio
 import uvicorn
@@ -21,12 +22,49 @@ from core.errors import (
     binance_error_handler, general_exception_handler
 )
 
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    """Startup/shutdown hook.
+
+    Replaces @app.on_event("startup"), which FastAPI has deprecated and plans to
+    remove. The names referenced below are defined further down this module; that
+    is fine because the body only executes once the module has fully imported.
+    """
+    task = None
+
+    # Off by default. The API runs multiple uvicorn workers and this hook fires in
+    # each worker process, so an in-API producer would open one Binance
+    # subscription per worker and XADD every tick that many times. Ingestion lives
+    # in the dedicated `price-ingest` compose service; see its note there.
+    if (
+        os.getenv("RUN_PRICE_INGESTION_IN_API", "false").lower() == "true"
+        and REALTIME_PRICES_AVAILABLE
+    ):
+        try:
+            task = asyncio.create_task(_supervised_stream_ticks())
+            print("✅ Live price ingestion task started (in-API mode)")
+        except Exception as e:
+            print(f"⚠️ Live price ingestion failed to start: {e}")
+
+    yield
+
+    # Cancel on shutdown so a reload or SIGTERM doesn't leave the Binance socket
+    # and its retry loop running against a half-torn-down event loop.
+    if task is not None:
+        task.cancel()
+        try:
+            await task
+        except asyncio.CancelledError:
+            pass
+
+
 # Create FastAPI application
 app = FastAPI(
     title=settings.app_name,
     version=settings.version,
     description="A comprehensive crypto portfolio management API with JWT authentication",
-    debug=settings.debug
+    debug=settings.debug,
+    lifespan=lifespan,
 )
 
 # Add request ID middleware
@@ -314,16 +352,6 @@ async def _supervised_stream_ticks():
             print(f"⚠️ Live price ingestion task crashed, restarting in 5s: {e}")
             await asyncio.sleep(5)
 
-
-@app.on_event("startup")
-async def start_background_tasks():
-    if REALTIME_PRICES_AVAILABLE:
-        try:
-            asyncio.create_task(_supervised_stream_ticks())
-            print("✅ Live price ingestion task started")
-        except Exception as e:
-            print(f"⚠️ Live price ingestion failed to start: {e}")
-
 # Health check endpoint
 @app.get("/health")
 async def health_check():
@@ -335,11 +363,25 @@ async def health_check():
         from database.connection import SessionLocal
         from sqlalchemy import text
         db_session = SessionLocal()
-        # Simple query to test DB
-        db_session.execute(text("SELECT 1"))
-        db_session.close()
-        db_status = "healthy"
-        db_error = None
+        try:
+            # Connectivity.
+            db_session.execute(text("SELECT 1"))
+            # ...and schema. SELECT 1 succeeds against a database with zero
+            # tables, so on a fresh volume where migrations never ran this check
+            # used to pass while every real query failed. alembic_version only
+            # exists once `alembic upgrade head` has been applied.
+            migrated = db_session.execute(
+                text("SELECT to_regclass('public.alembic_version') IS NOT NULL")
+            ).scalar()
+        finally:
+            db_session.close()
+
+        if migrated:
+            db_status = "healthy"
+            db_error = None
+        else:
+            db_status = "unhealthy"
+            db_error = "Database reachable but not migrated (no alembic_version table)"
     except Exception as e:
         db_status = "unhealthy"
         db_error = str(e)
@@ -434,7 +476,7 @@ async def health_check():
         all(f["status"] in ["healthy", "unavailable"] for f in features_health.values())
     )
     
-    return {
+    payload = {
         "status": "healthy" if overall_healthy else "degraded",
         "timestamp": datetime.utcnow().isoformat(),
         "version": settings.version,
@@ -456,6 +498,21 @@ async def health_check():
             "healthy_components": sum(1 for status in [db_status, binance_status] if status == "healthy")
         }
     }
+
+    # The status CODE has to carry the verdict, not just the body.
+    #
+    # This previously returned 200 unconditionally with "degraded" in the JSON.
+    # Docker's healthcheck is `curl -f`, which only fails on HTTP >= 400, so an
+    # unreachable database left the container marked healthy: the frontend's
+    # depends_on(service_healthy) was satisfied and any load balancer kept
+    # routing traffic, while every data endpoint returned 500. An outage that
+    # reports green is worse than one that reports red.
+    return JSONResponse(
+        status_code=(
+            status.HTTP_200_OK if overall_healthy else status.HTTP_503_SERVICE_UNAVAILABLE
+        ),
+        content=payload,
+    )
 
 # Root endpoint
 @app.get("/")

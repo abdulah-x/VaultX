@@ -27,5 +27,12 @@ COPY . .
 # Expose port
 EXPOSE 8000
 
-# Command to run the application
-CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000", "--reload"]
+# The entrypoint applies migrations, then starts uvicorn with real workers.
+# It replaces a bare `uvicorn ... --reload` CMD: --reload is a development flag
+# that spawns a file watcher, and because compose bind-mounts ./backend to /app,
+# any write under that directory restarted the API and dropped in-flight
+# requests. Set RELOAD=true to opt back into it locally.
+COPY entrypoint.sh /usr/local/bin/entrypoint.sh
+RUN chmod +x /usr/local/bin/entrypoint.sh
+
+ENTRYPOINT ["/usr/local/bin/entrypoint.sh"]

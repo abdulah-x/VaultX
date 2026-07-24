@@ -92,7 +92,13 @@ yarn-debug.log*
 yarn-error.log*
 .next/
 out/
-package-lock.json
+# Lockfiles are TRACKED on purpose. Ignoring package-lock.json meant a fresh
+# clone had none, the frontend Dockerfile's `package-lock.json*` glob silently
+# tolerated its absence, and `npm install` then resolved every ^range to
+# whatever was newest at build time -- so two builds of the same commit could
+# ship different dependency trees.
+# yarn.lock stays ignored: this project uses npm, and a stray yarn.lock would
+# give two competing sources of truth.
 yarn.lock
 
 # Docker
