@@ -113,3 +113,15 @@ async def stream_binance_ticks() -> None:
 
     await redis_streams.ensure_group()
     await _connect_and_stream()
+
+
+if __name__ == "__main__":
+    # Runnable as its own process so exactly one producer exists.
+    #
+    # This used to run only as a background task inside the API, which was fine
+    # while the API was a single uvicorn process. Under multiple workers each
+    # worker would have started its own producer, and every tick would have been
+    # XADDed to `price_ticks` once per worker -- duplicating every row the writer
+    # then persisted. See the `price-ingest` service in docker-compose.yml.
+    logging.basicConfig(level=logging.INFO)
+    asyncio.run(stream_binance_ticks())
