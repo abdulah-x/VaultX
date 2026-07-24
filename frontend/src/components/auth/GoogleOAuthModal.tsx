@@ -3,6 +3,8 @@
 import { useState } from 'react';
 import { X } from 'lucide-react';
 import { GoogleLogin, CredentialResponse } from '@react-oauth/google';
+import type { AxiosError } from 'axios';
+import { api } from '@/lib/api';
 
 /** What callers actually read off the authenticated user. Typed narrowly and
  *  optionally because the field is absent for a brand-new Google signup. */
@@ -35,17 +37,8 @@ export default function GoogleOAuthModal({ isOpen, onClose, onSuccess, context =
  throw new Error("No credential received");
  }
 
- // Send the ID token to the backend
- const response = await fetch('http://localhost:8001/api/auth/google/login', {
- method: 'POST',
- headers: { 'Content-Type': 'application/json' },
- body: JSON.stringify({
- token: credentialResponse.credential, // Send the ID Token
- context
- }),
- });
-
- const data = await response.json();
+ // Send the ID token to the backend, which verifies it with Google.
+ const data = await api.auth.googleLogin(credentialResponse.credential, context);
 
  if (data.success) {
  // Save token
@@ -60,8 +53,20 @@ export default function GoogleOAuthModal({ isOpen, onClose, onSuccess, context =
  setError(data.message || 'Google Sign-In failed');
  }
  } catch (err) {
- setError('Failed to connect to server. Please try again.');
- console.error('Google login error:', err);
+ // axios rejects on non-2xx, where the previous raw fetch resolved and let
+ // the `data.success` branch below handle it. So a rejected request here is
+ // either a transport failure or a real HTTP error carrying a message --
+ // read the backend envelope before falling back to a generic string.
+ const response = (err as AxiosError)?.response;
+ const body = response?.data as { error?: { message?: string }; detail?: string; message?: string } | undefined;
+ const backendMessage = body?.error?.message ?? body?.detail ?? body?.message;
+
+ setError(
+ backendMessage ||
+ (response
+ ? 'Google Sign-In failed. Please try again.'
+ : 'Cannot connect to server. Please ensure the backend is running.'),
+ );
  } finally {
  setLoading(false);
  }
