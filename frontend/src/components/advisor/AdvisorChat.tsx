@@ -159,6 +159,13 @@ export default function AdvisorChat() {
  err?.response?.status === 502 ||
  err?.response?.status === 503;
 
+ // This API returns { error: { message, code } }, not FastAPI's default
+ // { detail }. Reading only `detail` meant every server-side refusal --
+ // including the guest-mode 403, which explains itself perfectly well --
+ // was replaced with a generic "Something went wrong".
+ const body = err?.response?.data;
+ const serverMessage = body?.error?.message ?? body?.detail ?? body?.message;
+
  setMessages((prev) => [
  ...prev,
  {
@@ -166,8 +173,7 @@ export default function AdvisorChat() {
  role: "assistant",
  content: isBackendDown
  ? "⚠️ Cannot connect to the backend. Make sure the Docker stack is running (`docker compose up`)."
- : err?.response?.data?.detail ||
- "Something went wrong. Please try again.",
+ : serverMessage || "Something went wrong. Please try again.",
  timestamp: new Date(),
  isError: true,
  },
