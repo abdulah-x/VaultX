@@ -47,15 +47,27 @@ services:
 
   # 2. Backend (Starts Second, depends on DB)
   backend:
-    build: ./backend
+    build:
+      context: ./backend
+      # The file is named DockerFile (capital F). BuildKit looks for "Dockerfile"
+      # and the build context is case-sensitive inside the Linux VM, so without
+      # this the backend image fails to build at all.
+      dockerfile: DockerFile
     container_name: VaultX-Backend
     ports:
       - "8001:8000"
     environment:
-      - DEBUG=true
+      # DEBUG feeds FastAPI(debug=...), which sends exception detail to clients.
+      # Defaults to false so a deployment that forgets to set it is quiet rather
+      # than verbose; set DEBUG=true in your .env for local work.
+      - DEBUG=${DEBUG:-false}
+      # RELOAD=true re-enables uvicorn's autoreloader (see backend/entrypoint.sh).
+      # Local development only.
+      - RELOAD=${RELOAD:-false}
+      - WEB_CONCURRENCY=${WEB_CONCURRENCY:-2}
       - DATABASE_URL=postgresql://${POSTGRES_USER:-crypto_user}:${POSTGRES_PASSWORD:-crypto_password}@postgres:5432/${POSTGRES_DB:-crypto_portfolio}
       - REDIS_URL=redis://:${REDIS_PASSWORD:-changeme_dev_redis_password}@redis:6379/0
-      - FRONTEND_URL=http://localhost:3100
+      - FRONTEND_URL=${FRONTEND_URL:-http://localhost:3100}
       # Google OAuth
       - GOOGLE_CLIENT_ID=${GOOGLE_CLIENT_ID}
       - GOOGLE_CLIENT_SECRET=${GOOGLE_CLIENT_SECRET}
@@ -66,7 +78,7 @@ services:
       # doesn't carry it, so listing it would shadow backend/.env with an empty
       # value and make every stored credential unreadable.
       # Allow frontend to access backend
-      - ALLOWED_ORIGINS=["http://localhost:3100", "http://127.0.0.1:3100"]
+      - ALLOWED_ORIGINS=${ALLOWED_ORIGINS:-["http://localhost:3100", "http://127.0.0.1:3100"]}
     volumes:
       - ./backend:/app
       - backend_data:/app/data
@@ -86,17 +98,60 @@ services:
       retries: 5
       start_period: 10s
 
+  # 2a. Price producer (Binance WebSocket -> Redis Streams)
+  #
+  # Its own service, and deliberately never scaled past one replica. This used to
+  # run as a background task inside the API process, which was safe only while
+  # the API was a single uvicorn worker: with workers > 1 each worker would open
+  # its own Binance subscription and XADD every tick again, so the writer would
+  # persist one duplicate row per worker.
+  price-ingest:
+    build:
+      context: ./backend
+      # The file is named DockerFile (capital F). BuildKit looks for "Dockerfile"
+      # and the build context is case-sensitive inside the Linux VM, so without
+      # this the backend image fails to build at all.
+      dockerfile: DockerFile
+    container_name: VaultX-PriceIngest
+    entrypoint: ["python", "-m", "data_pipeline.live_stream"]
+    environment:
+      - DEBUG=${DEBUG:-false}
+      - PYTHONPATH=/app/app
+      - DATABASE_URL=postgresql://${POSTGRES_USER:-crypto_user}:${POSTGRES_PASSWORD:-crypto_password}@postgres:5432/${POSTGRES_DB:-crypto_portfolio}
+      - REDIS_URL=redis://:${REDIS_PASSWORD:-changeme_dev_redis_password}@redis:6379/0
+      # BINANCE_* omitted on purpose — see the note on stream-writer below.
+    volumes:
+      - ./backend:/app
+    networks:
+      - vaultx_network
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    restart: unless-stopped
+
   # 2b. Stream writer (Redis Streams -> TimescaleDB price ingestion)
   stream-writer:
-    build: ./backend
+    build:
+      context: ./backend
+      # The file is named DockerFile (capital F). BuildKit looks for "Dockerfile"
+      # and the build context is case-sensitive inside the Linux VM, so without
+      # this the backend image fails to build at all.
+      dockerfile: DockerFile
     container_name: VaultX-StreamWriter
     # cwd stays /app (matching the backend service) so the mounted backend/.env
     # (at /app/.env) resolves via pydantic-settings' relative env_file path;
     # PYTHONPATH adds /app/app so `data_pipeline`/`core`/`database` resolve as
     # bare imports the same way main.py's sys.path.append does for the API.
-    command: ["python", "-m", "data_pipeline.stream_writer"]
+    # `entrypoint:` not `command:` — the image defines an ENTRYPOINT
+    # (backend/entrypoint.sh, which migrates then starts uvicorn), and a
+    # `command:` would be appended to it as arguments rather than replacing it,
+    # so this service would silently start a second copy of the API instead of
+    # the writer.
+    entrypoint: ["python", "-m", "data_pipeline.stream_writer"]
     environment:
-      - DEBUG=true
+      - DEBUG=${DEBUG:-false}
       - PYTHONPATH=/app/app
       - DATABASE_URL=postgresql://${POSTGRES_USER:-crypto_user}:${POSTGRES_PASSWORD:-crypto_password}@postgres:5432/${POSTGRES_DB:-crypto_portfolio}
       - REDIS_URL=redis://:${REDIS_PASSWORD:-changeme_dev_redis_password}@redis:6379/0
@@ -120,15 +175,26 @@ services:
   frontend:
     build:
       context: ./frontend
+      # NEXT_PUBLIC_* values are INLINED INTO THE BROWSER BUNDLE AT BUILD TIME.
+      # The `environment:` block below cannot change them afterwards -- it is kept
+      # only so `docker compose config` shows the effective value.
+      #
+      # That means this URL must be whatever the END USER'S BROWSER can reach,
+      # not what the container can reach. It was hardcoded to localhost:8001,
+      # which is correct only when the browser runs on the same machine as the
+      # stack; deployed anywhere else, every visitor's browser would call its own
+      # localhost and the whole app would fail with no server-side trace.
+      #
+      # Set NEXT_PUBLIC_API_URL in your .env for any non-local deployment, and
+      # remember a change requires a REBUILD, not just a restart.
       args:
-        - NEXT_PUBLIC_API_URL=http://localhost:8001
+        - NEXT_PUBLIC_API_URL=${NEXT_PUBLIC_API_URL:-http://localhost:8001}
         - NEXT_PUBLIC_GOOGLE_CLIENT_ID=${GOOGLE_CLIENT_ID}
     container_name: VaultX-Frontend
     ports:
       - "3100:3000"
     environment:
-      # Browser-side access (Public URL)
-      - NEXT_PUBLIC_API_URL=http://localhost:8001
+      - NEXT_PUBLIC_API_URL=${NEXT_PUBLIC_API_URL:-http://localhost:8001}
       - NEXT_PUBLIC_GOOGLE_CLIENT_ID=${GOOGLE_CLIENT_ID}
     networks:
       - vaultx_network
