@@ -8,10 +8,23 @@ interface PerformanceData {
  unrealizedPnL: number;
 }
 
+export type PerformanceSeries = "totalValue" | "realizedPnL" | "unrealizedPnL";
+
 interface PerformanceChartProps {
  data: PerformanceData[];
  timeframe?: string;
  onTimeframeChange?: (timeframe: string) => void;
+ /**
+  * Which series to draw. Defaults to all three, but callers should pass only
+  * what they actually have: the backend stores no portfolio-value history
+  * (the PortfolioSnapshot table was dropped), so a caller working from the
+  * P&L timeline has real realizedPnL and nothing to put in totalValue.
+  * Drawing a series you don't have data for plots a flat line at zero, which
+  * reads as "the value was zero" rather than "this isn't tracked".
+  */
+ series?: PerformanceSeries[];
+ title?: string;
+ emptyMessage?: string;
 }
 
 // Custom tooltip component
@@ -41,11 +54,15 @@ const CustomTooltip = ({ active, payload, label }: any) => {
  return null;
 };
 
-export default function PerformanceChart({ 
- data, 
- timeframe: propTimeframe, 
- onTimeframeChange 
+export default function PerformanceChart({
+ data,
+ timeframe: propTimeframe,
+ onTimeframeChange,
+ series = ["totalValue", "realizedPnL", "unrealizedPnL"],
+ title = "Portfolio Growth Over Time",
+ emptyMessage = "No performance history yet.",
 }: PerformanceChartProps) {
+ const shows = (key: PerformanceSeries) => series.includes(key);
  const [selectedTimeframe, setSelectedTimeframe] = useState(propTimeframe || '30D');
  const timeframes = ['7D', '30D', '90D', '1Y', 'ALL'];
  
@@ -81,27 +98,43 @@ export default function PerformanceChart({
  }
  };
 
- // Calculate min and max values for proper scaling
- const allValues = filteredData.flatMap(d => [d.totalValue, d.realizedPnL, d.unrealizedPnL]);
- const minValue = Math.min(...allValues);
- const maxValue = Math.max(...allValues);
- 
+ // Scale only against the series actually being drawn -- including a hidden
+ // one would leave dead space in the plot.
+ const allValues = filteredData.flatMap(d =>
+ series.map(key => d[key]).filter((v): v is number => Number.isFinite(v))
+ );
+ const minValue = allValues.length ? Math.min(...allValues) : 0;
+ const maxValue = allValues.length ? Math.max(...allValues) : 0;
+
  // Create domain with padding for better visualization
- const padding = (maxValue - minValue) * 0.1;
+ const padding = (maxValue - minValue) * 0.1 || 1;
  const yAxisDomain = [
- Math.max(0, minValue - padding), 
+ Math.max(0, minValue - padding),
  maxValue + padding
  ];
 
- // Calculate period performance
+ // Period growth is only meaningful against total value; with that series
+ // hidden there is no denominator to express a percentage against.
  const firstValue = filteredData[0]?.totalValue || 0;
  const lastValue = filteredData[filteredData.length - 1]?.totalValue || 0;
  const periodGrowth = firstValue ? ((lastValue - firstValue) / firstValue * 100) : 0;
+ const showPeriodGrowth = shows("totalValue") && firstValue > 0;
+
+ if (filteredData.length === 0) {
+ return (
+ <div className="bg-card border-border rounded-lg border p-6">
+ <h3 className="text-lg font-bold text-foreground uppercase tracking-wider">{title}</h3>
+ <div className="flex items-center justify-center text-center text-muted-foreground text-sm" style={{ height: '320px' }}>
+ <p className="max-w-sm">{emptyMessage}</p>
+ </div>
+ </div>
+ );
+ }
 
  return (
  <div className="bg-card border-border rounded-lg border p-6">
  <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-6">
- <h3 className="text-lg font-bold text-foreground uppercase tracking-wider">Portfolio Growth Over Time</h3>
+ <h3 className="text-lg font-bold text-foreground uppercase tracking-wider">{title}</h3>
  
  {/* Timeframe Selector */}
  <div className="flex items-center gap-1 bg-secondary rounded-xl p-1 sm:p-1.5 border border-border shadow-lg overflow-x-auto">
@@ -185,6 +218,7 @@ export default function PerformanceChart({
  <Tooltip content={<CustomTooltip />} />
  
  {/* Total Value Area - Primary axis */}
+ {shows("totalValue") && (
  <Area
  yAxisId="left"
  type="monotone"
@@ -202,8 +236,10 @@ export default function PerformanceChart({
  }}
  name="Total Value"
  />
- 
+ )}
+
  {/* Realized PnL Line - Secondary axis */}
+ {shows("realizedPnL") && (
  <Line
  yAxisId="right"
  type="monotone"
@@ -219,8 +255,10 @@ export default function PerformanceChart({
  }}
  name="Realized PnL"
  />
- 
+ )}
+
  {/* Unrealized PnL Line - Secondary axis */}
+ {shows("unrealizedPnL") && (
  <Line
  yAxisId="right"
  type="monotone"
@@ -236,6 +274,7 @@ export default function PerformanceChart({
  }}
  name="Unrealized PnL"
  />
+ )}
  </ComposedChart>
  </ResponsiveContainer>
  
@@ -244,29 +283,29 @@ export default function PerformanceChart({
  {/* Enhanced Legend and Stats */}
  <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mt-6 pt-4 border-t border-border">
  <div className="flex flex-wrap items-center gap-4 sm:gap-6">
- <div className="flex items-center gap-3 group cursor-pointer">
- <div className="relative">
- <div className="w-4 h-4 bg-primary rounded-full shadow-lg shadow-cyan-400/30 group-hover:shadow-cyan-400/50 transition-shadow" />
- <div className="absolute inset-0 w-4 h-4 bg-primary rounded-full animate-ping opacity-20" />
+ {shows("totalValue") && (
+ <div className="flex items-center gap-3">
+ <div className="w-4 h-4 bg-primary rounded-full" />
+ <span className="text-sm font-medium text-foreground">Total Value</span>
  </div>
- <span className="text-sm font-medium text-foreground group-hover:text-foreground transition-colors">Total Value</span>
+ )}
+
+ {shows("realizedPnL") && (
+ <div className="flex items-center gap-3">
+ <div className="w-4 h-4 bg-vaultx-success rounded-full" />
+ <span className="text-sm font-medium text-foreground">Realized PnL</span>
  </div>
- 
- <div className="flex items-center gap-3 group cursor-pointer">
- <div className="relative">
- <div className="w-4 h-4 bg-vaultx-success rounded-full shadow-lg shadow-emerald-400/30 group-hover:shadow-emerald-400/50 transition-shadow" />
+ )}
+
+ {shows("unrealizedPnL") && (
+ <div className="flex items-center gap-3">
+ <div className="w-4 h-4 bg-vaultx-warning rounded-full" />
+ <span className="text-sm font-medium text-foreground">Unrealized PnL</span>
  </div>
- <span className="text-sm font-medium text-foreground group-hover:text-foreground transition-colors">Realized PnL</span>
- </div>
- 
- <div className="flex items-center gap-3 group cursor-pointer">
- <div className="relative">
- <div className="w-4 h-4 bg-vaultx-warning rounded-full shadow-lg shadow-amber-400/30 group-hover:shadow-amber-400/50 transition-shadow" />
- </div>
- <span className="text-sm font-medium text-foreground group-hover:text-foreground transition-colors">Unrealized PnL</span>
- </div>
+ )}
  </div>
 
+ {showPeriodGrowth && (
  <div className="text-left sm:text-right">
  <div className="text-sm font-medium text-muted-foreground mb-1">Period Growth</div>
  <div className={`text-xl font-bold tracking-tight flex items-center gap-2 ${
@@ -278,6 +317,7 @@ export default function PerformanceChart({
  {periodGrowth >= 0 ? '+' : ''}{periodGrowth.toFixed(1)}%
  </div>
  </div>
+ )}
  </div>
  </div>
  );

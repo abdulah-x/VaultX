@@ -22,6 +22,14 @@ interface PortfolioOverviewProps {
  percentage: string;
  isPositive: boolean;
  };
+ /**
+  * Tile captions. They are props rather than fixed strings because the two
+  * tiles do not always show a 24h/7d pair: the API exposes a real "today"
+  * capital-gain figure but no 7-day window, so the dashboard labels the second
+  * tile for what it is actually showing instead of mislabelling it "7d".
+  */
+ dayChangeLabel?: string;
+ weekChangeLabel?: string;
  weekChange: {
  value: string;
  percentage: string;
@@ -62,6 +70,8 @@ export default function PortfolioOverview({
  allocationData,
  dayChange,
  weekChange,
+ dayChangeLabel = "24h Change",
+ weekChangeLabel = "7d Change",
 }: PortfolioOverviewProps) {
  const [hoveredSlice, setHoveredSlice] = useState<string | null>(null);
 
@@ -191,8 +201,8 @@ export default function PortfolioOverview({
  {/* Performance summary */}
  <div className="w-full max-w-md">
  <div className="mb-6 grid grid-cols-2 gap-4">
- <ChangeTile label="24h Change" change={dayChange} />
- <ChangeTile label="7d Change" change={weekChange} />
+ <ChangeTile label={dayChangeLabel} change={dayChange} />
+ <ChangeTile label={weekChangeLabel} change={weekChange} />
  </div>
 
  <div className="flex gap-3">
