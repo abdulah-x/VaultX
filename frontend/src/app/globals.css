@@ -121,6 +121,20 @@
   --font-sans: var(--font-inter), system-ui, sans-serif;
   --font-mono: var(--font-jetbrains-mono), Consolas, monospace;
   --font-heading: var(--font-space-grotesk), system-ui, sans-serif;
+
+  /* Landing-page marquee. The track holds two identical copies of the strip,
+     so translating by exactly -50% lands the second where the first started
+     and the loop repeats without a seam. */
+  --animate-marquee: marquee 42s linear infinite;
+
+  @keyframes marquee {
+    from {
+      transform: translateX(0);
+    }
+    to {
+      transform: translateX(-50%);
+    }
+  }
 }
 
 @layer base {
@@ -130,5 +144,18 @@
   body {
     background-color: hsl(var(--background));
     color: hsl(var(--foreground));
+  }
+
+  /* A perpetually scrolling strip is exactly what this setting is about, and
+     the CSS animation is outside React so useReducedMotion cannot reach it. */
+  @media (prefers-reduced-motion: reduce) {
+    *,
+    *::before,
+    *::after {
+      animation-duration: 0.01ms !important;
+      animation-iteration-count: 1 !important;
+      transition-duration: 0.01ms !important;
+      scroll-behavior: auto !important;
+    }
   }
 }
