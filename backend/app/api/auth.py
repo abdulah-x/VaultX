@@ -420,6 +420,13 @@ async def logout_all_devices(
         # Invalidate database sessions
         auth_manager.invalidate_user_sessions(db, current_user.id)
 
+        # The DB session rows above are informational only -- nothing reads
+        # them to gate a request. This epoch is what actually revokes every
+        # outstanding token for this user (get_current_user rejects any
+        # token whose iat predates it), not just the one presenting this
+        # request.
+        redis_client.invalidate_tokens_before_now(current_user.id)
+
         # Also blacklist current token
         payload = auth_manager.verify_token(current_token)
         exp_timestamp = payload.get("exp", 0)
@@ -526,9 +533,12 @@ async def change_password(
         current_user.updated_at = datetime.utcnow()
         db.commit()
         
-        # Invalidate all sessions (force re-login on all devices)
+        # Invalidate all sessions (force re-login on all devices). The DB rows
+        # deleted here are informational only; the epoch below is what actually
+        # revokes every outstanding token, including this request's own.
         auth_manager.invalidate_user_sessions(db, current_user.id)
-        
+        redis_client.invalidate_tokens_before_now(current_user.id)
+
         return {"message": "Password changed successfully. Please log in again on all devices."}
         
     except AuthenticationError:

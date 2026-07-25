@@ -70,13 +70,17 @@ class AuthManager:
     def create_access_token(self, data: Dict[str, Any], expires_delta: Optional[timedelta] = None) -> str:
         """Create a JWT access token"""
         to_encode = data.copy()
-        
+
         if expires_delta:
             expire = datetime.utcnow() + expires_delta
         else:
             expire = datetime.utcnow() + timedelta(minutes=self.access_token_expire_minutes)
-        
-        to_encode.update({"exp": expire})
+
+        # `iat` lets get_current_user check a token against the issuing user's
+        # "invalidate everything before this instant" marker (core/dependencies.py),
+        # which is what actually makes change_password / logout-all-devices revoke
+        # outstanding tokens instead of only deleting UserSession rows nothing reads.
+        to_encode.update({"exp": expire, "iat": datetime.utcnow()})
         encoded_jwt = jwt.encode(to_encode, self.secret_key, algorithm=self.algorithm)
         return encoded_jwt
     

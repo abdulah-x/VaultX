@@ -85,6 +85,43 @@ class RedisClient:
             # a token whose revocation state is unknown.
             return True
     
+    # ---- Per-user token revocation epoch ----
+    #
+    # change_password / logout-all-devices used to only delete UserSession
+    # rows, but nothing ever reads that table to gate a request -- so a
+    # stolen JWT stayed fully valid until its own ~30min expiry regardless.
+    # This gives those flows a real effect: every token whose `iat` predates
+    # the stored epoch is rejected by get_current_user, without needing a
+    # DB/session lookup on every request.
+
+    def invalidate_tokens_before_now(self, user_id: int, ttl_seconds: int = 30 * 24 * 3600) -> bool:
+        """Mark every token issued before this instant as revoked for this user."""
+        try:
+            epoch = datetime.utcnow().timestamp()
+            if self.connected:
+                return bool(self.redis_client.setex(f"token_epoch:{user_id}", ttl_seconds, epoch))
+            if not hasattr(self, "_memory_token_epoch"):
+                self._memory_token_epoch = {}
+            self._memory_token_epoch[user_id] = epoch
+            return True
+        except Exception as e:
+            logger.warning("Could not set token revocation epoch for user %s: %s", user_id, e)
+            return False
+
+    def get_token_epoch(self, user_id: int) -> Optional[float]:
+        """The revocation cutoff for a user, or None if nothing has ever revoked their tokens."""
+        try:
+            if self.connected:
+                value = self.redis_client.get(f"token_epoch:{user_id}")
+                return float(value) if value is not None else None
+            return getattr(self, "_memory_token_epoch", {}).get(user_id)
+        except Exception as e:
+            logger.warning("Could not read token revocation epoch for user %s: %s", user_id, e)
+            # Fail closed, same as the blacklist: if we can't confirm a
+            # revocation is *not* in effect, treat every token as revoked
+            # rather than silently trusting one during a Redis outage.
+            return datetime.utcnow().timestamp()
+
     # ---- OTP storage (email verification / registration codes) ----
 
     def store_otp(self, email: str, otp: str, expires_in_seconds: int = 600, max_attempts: int = 3) -> bool:

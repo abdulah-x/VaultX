@@ -59,13 +59,24 @@ async def get_current_user(
 
         if user_id_str is None:
             raise AuthenticationError("Invalid token payload")
-        
+
         # Convert user_id from string to integer
         try:
             user_id = int(user_id_str)
         except (ValueError, TypeError):
             raise AuthenticationError("Invalid user ID in token")
-        
+
+        # Reject tokens issued before this user's revocation epoch (set by
+        # change_password / logout-all-devices). Tokens minted before iat
+        # existed on this deployment have no `iat` claim; treat those as
+        # already-revoked rather than silently exempting them from a check
+        # that didn't exist yet when they were issued.
+        epoch = redis_client.get_token_epoch(user_id)
+        if epoch is not None:
+            issued_at = payload.get("iat")
+            if issued_at is None or issued_at < epoch:
+                raise AuthenticationError("Token has been invalidated")
+
         # Get user from database
         user = db.query(User).filter(User.id == user_id).first()
         if user is None:
