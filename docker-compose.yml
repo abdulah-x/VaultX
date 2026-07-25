@@ -130,6 +130,23 @@ services:
       redis:
         condition: service_healthy
     restart: unless-stopped
+    # Neither of these two always-on stream services had a healthcheck or a
+    # resource ceiling — a hung-but-alive process wasn't detected/restarted
+    # the way postgres/redis/backend are, and nothing bounded memory if a
+    # stalled downstream write let messages buffer unboundedly.
+    healthcheck:
+      # No pgrep/procps in this image -- check PID 1's own cmdline instead,
+      # which needs nothing beyond a shell and grep.
+      test: ["CMD-SHELL", "grep -q data_pipeline.live_stream /proc/1/cmdline || exit 1"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 15s
+    deploy:
+      resources:
+        limits:
+          cpus: "0.5"
+          memory: 512M
 
   # 2b. Stream writer (Redis Streams -> TimescaleDB price ingestion)
   stream-writer:
@@ -170,6 +187,17 @@ services:
       redis:
         condition: service_healthy
     restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "grep -q data_pipeline.stream_writer /proc/1/cmdline || exit 1"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 15s
+    deploy:
+      resources:
+        limits:
+          cpus: "0.5"
+          memory: 512M
 
   # 3. Frontend (Starts Last, depends on Backend)
   frontend:
