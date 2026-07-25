@@ -238,7 +238,19 @@ async def get_pnl_summary(
             for h in holdings
         )
         total_unrealized = total_value - total_cost
-        total_pnl_pct = (total_unrealized / total_cost * 100) if total_cost > 0 else Decimal('0')
+
+        # Realized P&L was hardcoded to 0 here while the sibling /pnl endpoint
+        # (above, same file) correctly sums Trade.realized_pnl_usd -- the two
+        # endpoints could disagree by the user's entire realized amount.
+        total_realized = db.query(
+            func.coalesce(func.sum(Trade.realized_pnl_usd), Decimal('0'))
+        ).filter(
+            Trade.user_id == current_user.id,
+            Trade.realized_pnl_usd.isnot(None)
+        ).scalar() or Decimal('0')
+
+        total_pnl = total_unrealized + total_realized
+        total_pnl_pct = (total_pnl / total_cost * 100) if total_cost > 0 else Decimal('0')
 
         profitable = sum(1 for h in holdings if (h.unrealized_pnl_usd or 0) > 0)
         losing = sum(1 for h in holdings if (h.unrealized_pnl_usd or 0) < 0)
@@ -247,8 +259,8 @@ async def get_pnl_summary(
             "total_portfolio_value": total_value,
             "total_invested": total_cost,
             "total_unrealized_pnl": total_unrealized,
-            "total_realized_pnl": Decimal('0'),
-            "total_pnl": total_unrealized,
+            "total_realized_pnl": total_realized,
+            "total_pnl": total_pnl,
             "total_pnl_percentage": total_pnl_pct,
             "asset_count": len(holdings),
             "profitable_assets": profitable,
