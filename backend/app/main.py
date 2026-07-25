@@ -7,10 +7,13 @@ from binance.exceptions import BinanceAPIException
 from contextlib import asynccontextmanager
 from datetime import datetime
 import asyncio
+import logging
 import uvicorn
 import sys
 import os
 import uuid
+
+logger = logging.getLogger(__name__)
 
 # Add the app directory to Python path
 sys.path.append(os.path.dirname(os.path.abspath(__file__)))
@@ -383,8 +386,12 @@ async def health_check():
             db_status = "unhealthy"
             db_error = "Database reachable but not migrated (no alembic_version table)"
     except Exception as e:
+        # /health requires no auth and is polled continuously -- str(e) can
+        # carry connection-string fragments, hostnames or driver internals.
+        # Log the real text server-side, return a generic one to the caller.
+        logger.error("Health check DB failure: %s", e)
         db_status = "unhealthy"
-        db_error = str(e)
+        db_error = "Database check failed"
     
     # Check Binance API key configuration (if available). This intentionally does
     # NOT make a live Binance API call: /health is polled every 10s by Docker's
@@ -402,8 +409,9 @@ async def health_check():
         )
         binance_status = "healthy" if has_valid_key else "not_configured"
     except Exception as e:
+        logger.error("Health check Binance config failure: %s", e)
         binance_status = "unhealthy"
-        binance_error = str(e)
+        binance_error = "Binance configuration check failed"
     
     # Advanced features health
     features_health = {
