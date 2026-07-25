@@ -267,25 +267,22 @@ class AdvancedPnLCalculator:
     
     async def _calculate_realized_unrealized_pnl(self, portfolios: List[Holding], trades: List[Trade], current_prices: Dict[str, float]) -> Dict[str, Any]:
         """Separate realized vs unrealized P&L"""
-        realized_pnl = 0
         unrealized_pnl = 0
-        
-        # Calculate realized P&L from completed trades
-        trades_by_symbol = defaultdict(list)
-        for trade in trades:
-            trades_by_symbol[trade.symbol].append(trade)
-        
-        for symbol, symbol_trades in trades_by_symbol.items():
-            symbol_trades.sort(key=lambda x: x.executed_at)
-            
-            # Simple realized P&L calculation
-            total_buy_value = sum(float(t.quantity) * float(t.price) for t in symbol_trades if t.side == "BUY")
-            total_sell_value = sum(float(t.quantity) * float(t.price) for t in symbol_trades if t.side == "SELL")
-            
-            # This is a simplified calculation - would need more sophisticated matching in production
-            if total_sell_value > 0:
-                realized_pnl += total_sell_value - total_buy_value
-        
+
+        # Realized P&L comes straight from Trade.realized_pnl_usd, which is
+        # computed FIFO-matched at trade time (trade_import.py / orders.py) and
+        # is not scoped to whichever date window this request happens to use.
+        #
+        # This used to be recomputed here as sum(sell notional) - sum(buy
+        # notional) for trades *within the window only*. That breaks whenever a
+        # position's opening buys fall outside the window (the common case for
+        # `days=30`, the default): total_buy_value collapses to 0 and the
+        # "realized P&L" becomes gross sale proceeds instead of profit -- e.g.
+        # $11,785 (total traded volume) instead of the true $2,552.50.
+        realized_pnl = sum(
+            float(t.realized_pnl_usd) for t in trades if t.realized_pnl_usd is not None
+        )
+
         # Calculate unrealized P&L from current holdings
         for portfolio in portfolios:
             if portfolio.current_value_usd and portfolio.average_cost_usd:
