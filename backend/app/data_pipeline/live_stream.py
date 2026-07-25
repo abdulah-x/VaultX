@@ -31,12 +31,6 @@ DEFAULT_WATCHLIST = ["BTCUSDT", "ETHUSDT", "SOLUSDT", "BNBUSDT"]
 RECONNECT_DELAY_SECONDS = 5
 MAX_RECONNECT_DELAY_SECONDS = 60
 
-# python-binance 1.0.19's built-in STREAM_TESTNET_URL ("wss://testnet.binance.vision/")
-# is wrong for market-data streams — that host serves the REST/WS-API only and 404s on
-# stream paths. Testnet market data actually lives on a separate host. Confirmed by
-# hand against both the single-symbol and combined-stream paths before wiring this in.
-TESTNET_STREAM_URL = "wss://stream.testnet.binance.vision/"
-
 
 def _get_watch_symbols() -> list[str]:
     """Symbols with an active holding, plus a small default watchlist."""
@@ -86,12 +80,16 @@ async def _connect_and_stream() -> None:
     try:
         symbols = _get_watch_symbols()
         logger.info("Connecting to Binance WS for symbols: %s", symbols)
-        client = await AsyncClient.create(
-            settings.binance_api_key, settings.binance_secret_key, testnet=settings.binance_testnet
-        )
+        # Market-data ticks always come from mainnet, regardless of
+        # BINANCE_TESTNET (which only controls where *orders* execute,
+        # via services/binance/client.py). Testnet last-trade prices can
+        # diverge materially from real market prices, and this producer
+        # writes into the same price_history series that backfill_price_history.py
+        # deliberately seeds from mainnet -- mixing the two sources in one
+        # series corrupted both current valuation and the MPT optimizer's
+        # covariance input. Ticker data is public, so no keys are needed.
+        client = await AsyncClient.create()
         bsm = BinanceSocketManager(client)
-        if settings.binance_testnet:
-            bsm.STREAM_TESTNET_URL = TESTNET_STREAM_URL
         streams = [f"{s.lower()}@ticker" for s in symbols]
         async with bsm.multiplex_socket(streams) as stream:
             while True:
@@ -107,6 +105,9 @@ async def _connect_and_stream() -> None:
 
 async def stream_binance_ticks() -> None:
     """Long-running task: connect to Binance, resubscribe on drop, forever."""
+    # The WS client itself needs no keys (ticker data is public mainnet data),
+    # but this doubles as the "is Binance configured for this deployment at
+    # all" feature flag, matching every other Binance-backed feature.
     if not settings.binance_api_key or not settings.binance_secret_key:
         logger.warning("BINANCE_API_KEY/SECRET not configured - live price ingestion disabled")
         return
