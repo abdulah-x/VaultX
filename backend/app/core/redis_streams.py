@@ -21,6 +21,12 @@ logger = logging.getLogger(__name__)
 
 PRICE_TICKS_STREAM = "price_ticks"
 PRICE_WRITER_GROUP = "price_writer_group"
+# A Redis Streams consumer group delivers each message to exactly one member,
+# so the WebSocket broadcaster (realtime_prices.py) must read as its own
+# group rather than defaulting to the writer's -- sharing PRICE_WRITER_GROUP
+# would silently split ticks between the two consumers instead of each
+# seeing the full stream.
+PRICE_REALTIME_GROUP = "price_realtime_group"
 
 
 class RedisStreamsClient:

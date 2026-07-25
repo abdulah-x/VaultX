@@ -23,7 +23,7 @@ from datetime import datetime
 
 from core.dependencies import get_db, get_current_active_user
 from core.auth import auth_manager
-from core.redis_streams import redis_streams
+from core.redis_streams import redis_streams, PRICE_REALTIME_GROUP
 from database.models import User, Holding, Asset, CurrentPrice
 
 router = APIRouter()
@@ -99,12 +99,18 @@ class RealTimePriceManager:
     async def _redis_listener_loop(self):
         """Consume price_ticks and fan matching updates out to local WebSocket clients."""
         consumer_name = f"realtime-prices-{os.getpid()}"
-        await redis_streams.ensure_group()
+        # Own consumer group, not the writer's: a Streams consumer group hands
+        # each message to exactly one member, so sharing PRICE_WRITER_GROUP
+        # with stream_writer.py silently split ticks between the DB writer and
+        # this broadcaster instead of each seeing the full stream.
+        await redis_streams.ensure_group(group=PRICE_REALTIME_GROUP)
         logger.info(f"🔌 Started Redis tick listener as consumer '{consumer_name}'")
 
         while True:
             try:
-                entries = await redis_streams.read_batch(consumer_name, count=100, block_ms=2000)
+                entries = await redis_streams.read_batch(
+                    consumer_name, count=100, block_ms=2000, group=PRICE_REALTIME_GROUP
+                )
                 acked_ids = []
                 for message_id, payload in entries:
                     symbol = payload.get("symbol")
@@ -121,7 +127,7 @@ class RealTimePriceManager:
                     await self._broadcast_price_update(symbol, price_data)
                     acked_ids.append(message_id)
 
-                await redis_streams.ack(acked_ids)
+                await redis_streams.ack(acked_ids, group=PRICE_REALTIME_GROUP)
             except asyncio.CancelledError:
                 raise
             except Exception as e:
