@@ -10,12 +10,22 @@ from pydantic import BaseModel, EmailStr
 from datetime import datetime
 
 from core.dependencies import get_db, get_current_user
-from core.errors import ValidationError, NotFoundError
+from core.errors import ValidationError, NotFoundError, AuthenticationError
+from core.redis_client import redis_client
 from database.models import User
 from services.email_service import email_service
 from core.audit import log_audit_event
 
 router = APIRouter()
+
+# Unlike /auth/login or /auth/guest, these two send an actual email per call
+# and had no throttle at all -- nothing stopped looping either endpoint to
+# spam an arbitrary inbox with OTP emails or burn send-quota. Keyed by IP for
+# the unauthenticated send-verification endpoint (mirrors guest-session
+# throttling) and by user id for resend (already authenticated, so IP would
+# just let a NAT-shared attacker lock out an unrelated account).
+VERIFICATION_SEND_WINDOW_SECONDS = 3600
+VERIFICATION_SEND_MAX_PER_WINDOW = 5
 
 
 # Pydantic models
@@ -31,6 +41,7 @@ class VerifyEmailRequest(BaseModel):
 @router.post("/auth/send-verification")
 async def send_verification_email(
     request: SendVerificationRequest,
+    http_request: Request,
     db: Session = Depends(get_db)
 ):
     """
@@ -43,6 +54,16 @@ async def send_verification_email(
     generic_response = {
         "message": "If an account with this email exists and isn't verified yet, a verification code has been sent."
     }
+
+    client_ip = http_request.client.host if http_request.client else "unknown"
+    if redis_client.incr_rate_counter(
+        f"send_verification:{client_ip}", VERIFICATION_SEND_WINDOW_SECONDS
+    ) > VERIFICATION_SEND_MAX_PER_WINDOW:
+        # Same generic body as every other outcome here: a distinct
+        # "rate limited" response would itself be a signal to an attacker
+        # that they were making progress against a real account.
+        return generic_response
+
     try:
         user = db.query(User).filter(User.email == request.email).first()
 
@@ -127,7 +148,12 @@ async def resend_verification(
                 "message": "Email is already verified",
                 "already_verified": True
             }
-        
+
+        if redis_client.incr_rate_counter(
+            f"resend_verification:{current_user.id}", VERIFICATION_SEND_WINDOW_SECONDS
+        ) > VERIFICATION_SEND_MAX_PER_WINDOW:
+            raise AuthenticationError("Too many verification emails requested. Please try again later.")
+
         # Generate and store OTP
         otp = email_service.generate_otp()
         email_service.store_otp(current_user.email, otp)
@@ -142,8 +168,8 @@ async def resend_verification(
             "message": "Verification code sent to your email",
             "email": current_user.email
         }
-        
-    except ValidationError:
+
+    except (ValidationError, AuthenticationError):
         raise
     except Exception as e:
         raise ValidationError(f"Failed to send verification email: {str(e)}")
