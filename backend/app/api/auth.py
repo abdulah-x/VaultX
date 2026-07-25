@@ -289,6 +289,20 @@ async def login_user(
                              ip_address=client_ip, user_agent=user_agent, success=False, error_message="account_disabled")
             raise AuthenticationError("Account is disabled")
 
+        # The seeded demo account has only a random, discarded password
+        # (create_demo_account.py) and must only be reachable through
+        # /auth/guest, whose tokens carry the `guest` claim the middleware
+        # keys its read-only restrictions on. A normal /auth/login token for
+        # this account would carry no such claim, silently escaping every
+        # guest restriction (writes, the AI advisor) on the one account every
+        # visitor shares. Reject exactly like a wrong password so the account
+        # isn't distinguishable from any other via this endpoint.
+        if user.email.lower() == settings.demo_user_email.lower():
+            redis_client.register_failed_login(rate_key, LOGIN_ATTEMPT_WINDOW_SECONDS)
+            log_audit_event(db, user.id, "login", "Login rejected for demo account via password auth",
+                             ip_address=client_ip, user_agent=user_agent, success=False, error_message="demo_account_login_blocked")
+            raise AuthenticationError("Invalid username/email or password")
+
         # Successful auth clears the throttle for this IP/username pair.
         redis_client.clear_failed_logins(rate_key)
 

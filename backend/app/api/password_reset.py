@@ -53,7 +53,15 @@ async def forgot_password(
 
         # Always return success even if user not found (security best practice)
         # This prevents email enumeration attacks
-        if not user:
+        #
+        # The demo account is included in this branch on purpose: it has only
+        # a random, discarded password, and resetting it would let anyone log
+        # in as it via the normal /auth/login flow -- which login_user
+        # separately refuses, but never letting a reset token be minted for
+        # it in the first place is a cheaper, earlier close of the same gap.
+        # Treated identically to "no such user" so this endpoint can't be used
+        # to distinguish the demo account from a nonexistent email either.
+        if not user or user.email.lower() == settings.demo_user_email.lower():
             return {
                 "message": "If an account with this email exists, a password reset link has been sent.",
                 "email": request.email
