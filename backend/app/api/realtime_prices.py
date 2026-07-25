@@ -43,6 +43,20 @@ class RealTimePriceManager:
         """Connect a user to real-time price updates"""
         await websocket.accept()
         connection_id = f"{user_id}_{user_token[:8]}"
+
+        # The same user reconnecting with the same token (a second tab, or a
+        # client that reconnects before the old socket is torn down) reuses
+        # this same connection_id. Overwriting the dict entry without closing
+        # the previous socket left it unreachable from active_connections/
+        # broadcast but still open server-side, lingering until its own
+        # receive_text() eventually errored out on its own.
+        existing = self.active_connections.get(connection_id)
+        if existing is not None and existing is not websocket:
+            try:
+                await existing.close(code=1000)
+            except Exception:
+                pass  # already closed/erroring - fine, we're replacing it anyway
+
         self.active_connections[connection_id] = websocket
 
         if user_id not in self.user_subscriptions:
