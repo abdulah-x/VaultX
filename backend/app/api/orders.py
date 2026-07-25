@@ -142,9 +142,25 @@ def _record_fill(db: Session, user_id: int, order_result: Dict[str, Any]) -> Dic
         holding.total_cost_usd = new_cost
         holding.average_cost_usd = (new_cost / new_qty) if new_qty > 0 else Decimal("0")
     else:  # SELL
-        avg_cost = (holding.average_cost_usd if holding else Decimal("0")) or Decimal("0")
-        realized_pnl = (avg_price - avg_cost) * executed_qty
-        if holding is not None:
+        if holding is None:
+            # A SELL fill with no local Holding at all means this app never
+            # saw a cost basis for the position (an external buy, a sync gap,
+            # or a race with portfolio_sync). Defaulting avg_cost to 0 here
+            # used to book the *entire* sale proceeds as pure profit -- e.g.
+            # a $500 sell of an untracked position reported as +$500 realized
+            # gain, when the true P&L is simply unknown. Leaving it null (the
+            # same "not computable" value BUY trades already carry) is honest;
+            # a wrong number would silently corrupt every realized-P&L
+            # consumer that trusts this field.
+            logger.warning(
+                "SELL fill for %s (user %s) with no existing Holding -- "
+                "realized_pnl_usd left null, cost basis unknown",
+                symbol, user_id,
+            )
+            realized_pnl = None
+        else:
+            avg_cost = holding.average_cost_usd or Decimal("0")
+            realized_pnl = (avg_price - avg_cost) * executed_qty
             old_qty = holding.total_quantity or Decimal("0")
             new_qty = old_qty - executed_qty
             if new_qty < 0:
