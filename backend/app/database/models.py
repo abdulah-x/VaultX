@@ -1,4 +1,4 @@
-from sqlalchemy import Column, Integer, String, Float, DateTime, Boolean, Text, ForeignKey, DECIMAL, Date, Index, PrimaryKeyConstraint
+from sqlalchemy import Column, Integer, String, Float, DateTime, Boolean, Text, ForeignKey, DECIMAL, Date, Index, PrimaryKeyConstraint, UniqueConstraint
 from sqlalchemy.orm import relationship
 from sqlalchemy.sql import func
 from .connection import Base
@@ -146,8 +146,8 @@ class Trade(Base):
     
     # Trading pair information
     symbol = Column(String(20), nullable=False, index=True)
-    base_asset_id = Column(Integer, ForeignKey("assets.id"), nullable=False)
-    quote_asset_id = Column(Integer, ForeignKey("assets.id"), nullable=False)
+    base_asset_id = Column(Integer, ForeignKey("assets.id"), nullable=False, index=True)
+    quote_asset_id = Column(Integer, ForeignKey("assets.id"), nullable=False, index=True)
     
     # Trade details
     side = Column(String(10), nullable=False)  # 'BUY', 'SELL'
@@ -188,7 +188,11 @@ class Trade(Base):
 # Portfolio Holdings
 class Holding(Base):
     __tablename__ = "holdings"
-    __table_args__ = (Index("ix_holdings_user_asset", "user_id", "asset_id"),)
+    # UNIQUE, not just an index: portfolio_sync upserts on the assumption of
+    # exactly one Holding row per (user_id, asset_id); a race between two
+    # concurrent syncs could otherwise insert a silent duplicate that
+    # corrupts portfolio totals with no error at all.
+    __table_args__ = (UniqueConstraint("user_id", "asset_id", name="uq_holdings_user_asset"),)
 
     id = Column(Integer, primary_key=True, index=True)
     user_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
@@ -267,8 +271,8 @@ class AuditLog(Base):
     __tablename__ = "audit_logs"
     
     id = Column(Integer, primary_key=True, index=True)
-    user_id = Column(Integer, ForeignKey("users.id"))
-    
+    user_id = Column(Integer, ForeignKey("users.id"), index=True)
+
     # Action details
     action_type = Column(String(50), nullable=False)
     action_description = Column(Text)
