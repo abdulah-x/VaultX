@@ -433,31 +433,36 @@ async def get_pnl_history(
             Trade.realized_pnl_usd.isnot(None)
         ).order_by(Trade.executed_at).all()
         
-        # Group trades by date and calculate cumulative realized P&L
+        # Group trades by date first (no running total here -- that has to
+        # track the day-by-day loop below, not this per-trade one).
         daily_realized_pnl = {}
-        cumulative_realized = Decimal('0')
-        
         for trade in trades:
             trade_date = trade.executed_at.date()
-            if trade_date not in daily_realized_pnl:
-                daily_realized_pnl[trade_date] = Decimal('0')
-            
+            daily_realized_pnl.setdefault(trade_date, Decimal('0'))
             daily_realized_pnl[trade_date] += trade.realized_pnl_usd
-            cumulative_realized += trade.realized_pnl_usd
-        
-        # Generate daily history
+
+        # Generate daily history. cumulative_realized accumulates as this loop
+        # walks forward day by day -- it used to be summed once over *all*
+        # trades before the loop even started, then only ever shown on a day
+        # that itself had trades, reported as 0 on every quiet day in between
+        # instead of carrying the running total forward. A $100 gain on day 1
+        # followed by nine quiet days showed cumulative 100,0,0,0,0,0,0,0,0,
+        # not 100,100,...,100 -- defeating the entire point of a cumulative
+        # P&L chart.
         history = []
         current_date = start_date
-        
+        cumulative_realized = Decimal('0')
+
         while current_date <= end_date:
             daily_realized = daily_realized_pnl.get(current_date, Decimal('0'))
-            
+            cumulative_realized += daily_realized
+
             history.append({
                 "date": current_date.isoformat(),
                 "daily_realized_pnl": float(daily_realized),
-                "cumulative_realized_pnl": float(cumulative_realized) if current_date in daily_realized_pnl else 0
+                "cumulative_realized_pnl": float(cumulative_realized)
             })
-            
+
             current_date += timedelta(days=1)
         
         # Calculate period statistics
