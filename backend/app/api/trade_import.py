@@ -36,6 +36,61 @@ def split_symbol(symbol: str):
             return symbol[: -len(quote)], quote
     return symbol, 'USDT'
 
+
+def recompute_realized_pnl(db: Session, user_id: int, symbols: set) -> None:
+    """Set Trade.realized_pnl_usd on every trade for these (user, symbol) pairs
+    via a full chronological replay, moving-average-cost method.
+
+    Before this, trades created here (the main path real Binance history
+    enters through) never had realized_pnl_usd set at all -- only trades
+    from a live in-app order fill (orders.py::_record_fill) got it, via an
+    inline moving average. Every "trusted" realized-P&L consumer (pnl.py,
+    portfolio.py::get_portfolio_kpis, advanced_pnl.py) reads this field, so
+    anyone whose history came from import showed $0 realized P&L, silently.
+
+    This is moving-average cost, not FIFO lot-matching, deliberately: the
+    schema's Holding.average_cost_usd is itself a running average (see
+    orders.py::_record_fill), so replaying with the same method keeps this
+    field consistent with how the rest of the codebase already treats cost
+    basis. True FIFO would need per-lot tracking tables and would leave this
+    field disagreeing with the average-cost Holding valuation shown
+    elsewhere -- a materially bigger change than fixing "never set at all".
+
+    Recomputes every trade for a touched symbol (not just the newly
+    imported ones), so a symbol that mixes historical import with earlier
+    order-endpoint fills ends up with one consistent methodology rather than
+    two different ones depending on which path wrote which row. Does not
+    touch the Holding table -- that stays owned by portfolio_sync/orders.py.
+    """
+    for symbol in symbols:
+        trades = (
+            db.query(Trade)
+            .filter(Trade.user_id == user_id, Trade.symbol == symbol)
+            .order_by(Trade.executed_at.asc(), Trade.id.asc())
+            .all()
+        )
+
+        qty = Decimal('0')
+        cost = Decimal('0')
+        for trade in trades:
+            if trade.side == 'BUY':
+                qty += trade.quantity
+                cost += trade.quote_quantity
+                trade.realized_pnl_usd = None
+            else:  # SELL
+                avg_cost = (cost / qty) if qty > 0 else Decimal('0')
+                sell_qty = trade.quantity
+                trade.realized_pnl_usd = trade.quote_quantity - (avg_cost * sell_qty)
+                cost -= avg_cost * sell_qty
+                qty -= sell_qty
+                if qty <= 0:
+                    # A sell that exceeds tracked lots (history starts mid-position,
+                    # or an external sell this app never saw) can't leave a negative
+                    # position -- reset rather than let cost go negative and corrupt
+                    # every subsequent trade's avg_cost.
+                    qty = Decimal('0')
+                    cost = Decimal('0')
+
 class TradeHistoryImporter:
     """Advanced trade history import from Binance"""
     
@@ -238,14 +293,23 @@ class TradeHistoryImporter:
                     imported_count += 1
             
             db.commit()
-            
+
+            # New/updated trades never had realized_pnl_usd set at all -- only
+            # live order-endpoint fills did. Recompute per touched symbol so
+            # every trade this import created or modified gets a real value.
+            touched_symbols = {t['symbol'] for t in trades}
+            touched_users = {t['user_id'] for t in trades}
+            for uid in touched_users:
+                recompute_realized_pnl(db, uid, touched_symbols)
+            db.commit()
+
             return {
                 "imported_new": imported_count,
                 "updated_existing": updated_count,
                 "skipped_duplicates": skipped_count,
                 "total_processed": len(trades)
             }
-            
+
         except Exception as e:
             db.rollback()
             raise e

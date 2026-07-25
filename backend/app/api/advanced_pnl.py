@@ -180,7 +180,11 @@ class AdvancedPnLCalculator:
         return portfolio_pnl
     
     async def _calculate_trade_based_pnl(self, trades: List[Trade], current_prices: Dict[str, float], db: Session) -> Dict[str, Any]:
-        """Calculate P&L based on actual trades (FIFO method).
+        """Calculate P&L based on actual trades (moving-average cost method).
+
+        Despite the name below, this tracks a running average cost, not FIFO
+        lot-matching -- consistent with Holding.average_cost_usd elsewhere in
+        the schema, which is itself an average, not a queue of lots.
 
         Kept in Decimal throughout (trade.quantity/price are DECIMAL columns) and
         stringified at the return boundary, to avoid float precision loss on
@@ -207,7 +211,7 @@ class AdvancedPnLCalculator:
             # Sort trades by execution time
             symbol_trades.sort(key=lambda x: x.executed_at)
 
-            # Calculate using FIFO method
+            # Moving-average cost, not FIFO (see docstring above)
             position = Decimal('0')  # Current position
             avg_cost = Decimal('0')   # Average cost basis
             realized_pnl = Decimal('0')
@@ -270,8 +274,9 @@ class AdvancedPnLCalculator:
         unrealized_pnl = 0
 
         # Realized P&L comes straight from Trade.realized_pnl_usd, which is
-        # computed FIFO-matched at trade time (trade_import.py / orders.py) and
-        # is not scoped to whichever date window this request happens to use.
+        # computed via a moving-average-cost replay at trade time
+        # (trade_import.py::recompute_realized_pnl / orders.py::_record_fill)
+        # and is not scoped to whichever date window this request happens to use.
         #
         # This used to be recomputed here as sum(sell notional) - sum(buy
         # notional) for trades *within the window only*. That breaks whenever a
