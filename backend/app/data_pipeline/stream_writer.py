@@ -53,7 +53,13 @@ async def _write_batch(entries: list) -> list:
                 base_symbol = _base_symbol(symbol)
                 asset_id = asset_map.get(base_symbol)
                 if asset_id is None:
-                    continue  # unknown asset (not yet seeded) - skip rather than guess
+                    # Unlike the malformed-tick branch below, this used to drop
+                    # silently -- any symbol the WS producer streams for a
+                    # newly-held asset that hasn't been seeded into `assets`
+                    # yet was permanently lost from price_history/CurrentPrice
+                    # with zero operational signal.
+                    logger.warning("Skipping tick for unseeded asset %s (symbol %s)", base_symbol, symbol)
+                    continue
                 price = Decimal(str(payload["price"]))
                 ts = datetime.fromisoformat(payload["timestamp"])
             except (KeyError, InvalidOperation, ValueError, TypeError) as e:

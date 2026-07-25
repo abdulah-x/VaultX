@@ -98,6 +98,8 @@ async def _connect_and_stream() -> None:
                 symbol = data.get("s")
                 if symbol:
                     await _handle_tick(symbol, data)
+                else:
+                    logger.warning("Received a stream message with no symbol field: %s", data)
     finally:
         if client is not None:
             await client.close_connection()
