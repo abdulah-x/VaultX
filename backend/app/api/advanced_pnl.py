@@ -151,7 +151,15 @@ class AdvancedPnLCalculator:
             asset = portfolio.symbol
             quantity = float(portfolio.total_quantity)
             avg_price = float(portfolio.average_cost_usd or 0)
-            current_price = current_prices.get(asset, 0)
+            # Default a missing price to avg_price (no unrealized change),
+            # not 0 -- the same convention _calculate_realized_unrealized_pnl
+            # already uses. _create_pnl_summary blends fields from both
+            # methods into one response object; defaulting to 0 here
+            # manufactured a fake 100% loss for any asset without a
+            # CurrentPrice row (a delisted pair, a new listing, sync lag)
+            # while the sibling method reported 0 change for that same asset
+            # in the same summary.
+            current_price = current_prices.get(asset, avg_price)
             
             invested_value = quantity * avg_price
             current_value = quantity * current_price
