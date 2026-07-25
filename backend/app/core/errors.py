@@ -13,6 +13,8 @@ import logging
 import traceback
 from datetime import datetime
 
+from core.config import settings
+
 # Setup logging
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -196,9 +198,13 @@ async def database_error_handler(request: Request, exc: SQLAlchemyError) -> JSON
             {"database_error": "Duplicate or invalid data"}
         )
     else:
+        # str(exc) on a SQLAlchemy error routinely includes the failing SQL
+        # statement, bound parameters and table/column names -- never put it
+        # in the client-facing response. The full text still goes to the log
+        # line below, where an operator (not a caller) can see it.
         api_error = DatabaseError(
             "Database operation failed",
-            {"database_error": str(exc)}
+            {}
         )
     
     logger.error(
@@ -257,9 +263,13 @@ async def general_exception_handler(request: Request, exc: Exception) -> JSONRes
         }
     )
     
+    # logger.level is NOTSET (0) unless something calls .setLevel() -- which
+    # nothing here does -- so `logger.level <= logging.DEBUG` was always True
+    # regardless of environment, and the exception's class name leaked to
+    # every caller in production. Gate on the actual debug setting instead.
     api_error = APIError(
         "An unexpected error occurred",
-        details={"error_type": type(exc).__name__} if logger.level <= logging.DEBUG else {}
+        details={"error_type": type(exc).__name__} if settings.debug else {}
     )
     
     return JSONResponse(
