@@ -172,30 +172,38 @@ export default function OnboardingPage() {
 
  const completeOnboarding = async () => {
  setIsCompleting(true);
- 
+
+ // Set this first, not after the backend call: ProtectedRoute's dashboard
+ // guard reads only this flag (user.hasCompletedOnboarding never comes back
+ // from the backend -- there's no such column). A guest/demo session is
+ // blocked from writing to /auth/profile entirely, and any other transient
+ // failure here previously left the flag unset, which bounced the user
+ // straight back to /onboarding the instant they reached /dashboard --
+ // indistinguishable from the button doing nothing at all.
+ localStorage.setItem('hasCompletedOnboarding', 'true');
+
  try {
- // Mark user as having completed onboarding
  if (updateUserProfile && user) {
  await updateUserProfile({
  hasCompletedOnboarding: true
  });
  }
- 
- // Store in localStorage as backup
- localStorage.setItem('hasCompletedOnboarding', 'true');
- 
- // Redirect to dashboard
- router.push('/dashboard');
  } catch (error) {
  console.error('Error completing onboarding:', error);
- // Still redirect to dashboard even if profile update fails
- router.push('/dashboard');
+ // Non-fatal: the localStorage flag above is what actually gates entry
+ // to the dashboard, so a failed profile sync (e.g. a guest session,
+ // which can't write at all) must not block navigation.
  } finally {
  setIsCompleting(false);
  }
+
+ router.push('/dashboard');
  };
 
  const skipOnboarding = () => {
+ // Same flag as completeOnboarding -- without it this always looped back
+ // to /onboarding via ProtectedRoute's guard.
+ localStorage.setItem('hasCompletedOnboarding', 'true');
  router.push('/dashboard');
  };
 
