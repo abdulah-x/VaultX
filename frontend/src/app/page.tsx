@@ -23,6 +23,7 @@ import { Card } from "@/components/ui/Card";
 import Badge from "@/components/ui/Badge";
 import ThemeToggle from "@/components/ui/ThemeToggle";
 import HeroVisual from "@/components/landing/HeroVisual";
+import Logo from "@/components/landing/Logo";
 import ProductPreview from "@/components/landing/ProductPreview";
 import AssetMarquee from "@/components/landing/AssetMarquee";
 import FaqAccordion from "@/components/landing/FaqAccordion";
@@ -183,9 +184,7 @@ export default function LandingPage() {
       <header className="bg-background/70 border-border sticky top-0 z-50 border-b backdrop-blur-xl">
         <nav className="mx-auto flex max-w-6xl items-center justify-between px-6 py-4">
           <div className="flex items-center gap-3">
-            <div className="bg-primary text-primary-foreground flex h-9 w-9 items-center justify-center rounded-lg">
-              <BarChart3 className="h-5 w-5" />
-            </div>
+            <Logo />
             <span className="font-heading text-lg font-bold tracking-tight">VaultX</span>
           </div>
           <div className="flex items-center gap-2">
