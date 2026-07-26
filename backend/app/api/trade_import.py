@@ -4,6 +4,7 @@ Import and process trade history from Binance
 """
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.orm import Session
+from sqlalchemy.exc import IntegrityError
 from typing import Dict, Any, List, Optional
 from decimal import Decimal
 from datetime import datetime, timedelta
@@ -271,7 +272,6 @@ class TradeHistoryImporter:
                     base_asset = get_or_create_asset(db, trade_data['base_symbol'])
                     quote_asset = get_or_create_asset(db, trade_data['quote_symbol'])
 
-                    # Create new trade
                     new_trade = Trade(
                         user_id=trade_data['user_id'],
                         binance_order_id=trade_data['binance_order_id'],
@@ -289,9 +289,24 @@ class TradeHistoryImporter:
                         is_maker=trade_data.get('is_maker'),
                         executed_at=trade_data['executed_at'],
                     )
-                    db.add(new_trade)
-                    imported_count += 1
-            
+                    # SAVEPOINT + flush per trade, not a single db.add() left
+                    # for the batch commit at the end: the app-level "existing"
+                    # check above has a race window (two concurrent imports
+                    # can both see no existing row), and the
+                    # uq_trades_user_symbol_binance_trade_id constraint is
+                    # what actually catches that. Without a per-trade
+                    # SAVEPOINT, that IntegrityError would only surface at the
+                    # final db.commit() below and roll back the *entire*
+                    # batch -- discarding every legitimately-new trade in it,
+                    # not just the one racy duplicate.
+                    try:
+                        with db.begin_nested():
+                            db.add(new_trade)
+                            db.flush()
+                        imported_count += 1
+                    except IntegrityError:
+                        skipped_count += 1
+
             db.commit()
 
             # New/updated trades never had realized_pnl_usd set at all -- only

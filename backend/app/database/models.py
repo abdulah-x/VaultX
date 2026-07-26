@@ -135,7 +135,19 @@ class PriceHistory(Base):
 # Trading and Transactions
 class Trade(Base):
     __tablename__ = "trades"
-    __table_args__ = (Index("ix_trades_user_executed", "user_id", "executed_at"),)
+    __table_args__ = (
+        Index("ix_trades_user_executed", "user_id", "executed_at"),
+        # Backs trade_import.py's dedup check at the database level -- the
+        # app-level check-then-insert alone couldn't stop two concurrent
+        # imports from both seeing "no existing trade" and both inserting.
+        # Per-symbol, not just binance_trade_id: IDs are only unique within
+        # a symbol. NULL binance_trade_id (order-endpoint fills with no fill
+        # data) is exempt -- Postgres treats every NULL as distinct in a
+        # UNIQUE index.
+        UniqueConstraint(
+            "user_id", "symbol", "binance_trade_id", name="uq_trades_user_symbol_binance_trade_id"
+        ),
+    )
 
     id = Column(Integer, primary_key=True, index=True)
     user_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
