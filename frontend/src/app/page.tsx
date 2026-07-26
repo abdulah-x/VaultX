@@ -23,6 +23,7 @@ import { Card } from "@/components/ui/Card";
 import Badge from "@/components/ui/Badge";
 import ThemeToggle from "@/components/ui/ThemeToggle";
 import HeroVisual from "@/components/landing/HeroVisual";
+import MarketPulseBackground from "@/components/landing/MarketPulseBackground";
 import Logo from "@/components/landing/Logo";
 import ProductPreview from "@/components/landing/ProductPreview";
 import AssetMarquee from "@/components/landing/AssetMarquee";
@@ -203,6 +204,7 @@ export default function LandingPage() {
 
       {/* ── Hero ────────────────────────────────────────────────────────── */}
       <div className="relative overflow-hidden">
+        <MarketPulseBackground />
         <HeroVisual />
 
         {/* Radial wash behind the headline, so the 3D scene reads as depth
