@@ -56,12 +56,6 @@ export interface HoldingRow {
   unrealizedPnL: number;
   unrealizedPnLPercent: number;
   allocation: number;
-  /**
-   * Kept for component compatibility. It is the *unrealized* P&L percentage,
-   * not a 24h move -- the portfolio endpoints carry no 24h delta, and labelling
-   * a since-purchase return as "24h" would be straightforwardly wrong.
-   */
-  change24h: number;
 }
 
 /** Totals derived once, so no component re-parses the decimal strings. */
@@ -93,7 +87,6 @@ export function normalizeHolding(holding: ApiHolding, index: number): HoldingRow
     unrealizedPnL: toNum(holding.unrealized_pnl_usd),
     unrealizedPnLPercent: toNum(holding.unrealized_pnl_percentage),
     allocation: toNum(holding.portfolio_percentage),
-    change24h: toNum(holding.unrealized_pnl_percentage),
   };
 }
 

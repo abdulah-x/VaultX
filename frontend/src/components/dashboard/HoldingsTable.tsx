@@ -1,6 +1,6 @@
 "use client";
 
-import { MoreHorizontal, ArrowUpRight, ArrowDownRight, TrendingUp, TrendingDown } from "lucide-react";
+import { MoreHorizontal, ArrowUpRight, ArrowDownRight } from "lucide-react";
 import { Card } from "@/components/ui/Card";
 import {
  Table,
@@ -23,8 +23,8 @@ interface HoldingData {
  marketValue: number;
  realizedPnL: number;
  unrealizedPnL: number;
+ unrealizedPnLPercent: number;
  allocation: number;
- change24h: number;
  icon?: string;
 }
 
@@ -82,14 +82,12 @@ export default function HoldingsTable({ holdings, totalValue }: HoldingsTablePro
  <TableHead className="px-6 text-right">Market Price</TableHead>
  <TableHead className="px-6 text-right">Market Value</TableHead>
  <TableHead className="px-6 text-right">Unrealized PnL</TableHead>
- <TableHead className="px-6 text-right">24h Change</TableHead>
  <TableHead className="px-6 text-right">Allocation</TableHead>
  </TableRow>
  </TableHeader>
  <TableBody>
  {holdings.map((holding) => {
  const pnlPositive = holding.unrealizedPnL >= 0;
- const changePositive = holding.change24h >= 0;
  const costBasisPct =
  holding.avgBuyPrice === 0
  ? 0
@@ -145,22 +143,6 @@ export default function HoldingsTable({ holdings, totalValue }: HoldingsTablePro
  </div>
  <div className={cn("text-xs", pnlTone(pnlPositive))}>
  {formatPercentage(costBasisPct)}
- </div>
- </TableNumericCell>
-
- <TableNumericCell className="px-6 text-right">
- <div
- className={cn(
- "flex items-center justify-end gap-1 text-sm font-medium",
- pnlTone(changePositive),
- )}
- >
- {changePositive ? (
- <TrendingUp className="h-3 w-3" />
- ) : (
- <TrendingDown className="h-3 w-3" />
- )}
- {formatPercentage(holding.change24h)}
  </div>
  </TableNumericCell>
 

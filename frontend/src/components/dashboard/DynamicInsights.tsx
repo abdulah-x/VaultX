@@ -11,7 +11,7 @@ interface HoldingData {
  realizedPnL: number;
  unrealizedPnL: number;
  allocation: number;
- change24h: number;
+ unrealizedPnLPercent: number;
 }
 
 interface PortfolioMetrics {
@@ -48,13 +48,20 @@ interface InsightsProps {
 }
 
 export default function DynamicInsights({ holdings, metrics, totalValue }: InsightsProps) {
- // Calculate best and worst performers
- const bestPerformer = holdings.reduce((best, current) => 
- current.change24h > best.change24h ? current : best
+ // reduce() with no initial value throws on an empty array -- a genuine
+ // crash risk for a zero-holdings account, not just a style nit.
+ if (holdings.length === 0) {
+ return null;
+ }
+
+ // Calculate best and worst performers by unrealized P&L% (since purchase,
+ // not a 24h move -- the portfolio endpoints carry no 24h delta).
+ const bestPerformer = holdings.reduce((best, current) =>
+ current.unrealizedPnLPercent > best.unrealizedPnLPercent ? current : best
  );
- 
- const worstPerformer = holdings.reduce((worst, current) => 
- current.change24h < worst.change24h ? current : worst
+
+ const worstPerformer = holdings.reduce((worst, current) =>
+ current.unrealizedPnLPercent < worst.unrealizedPnLPercent ? current : worst
  );
 
  // Calculate portfolio concentration risk
@@ -68,12 +75,12 @@ export default function DynamicInsights({ holdings, metrics, totalValue }: Insig
  const insights = [];
 
  // Performance insight
- if (bestPerformer.change24h > 5) {
+ if (bestPerformer.unrealizedPnLPercent > 5) {
  insights.push({
  type: 'success' as const,
  icon: <TrendingUp className="w-4 h-4" />,
  title: 'Strong Performance',
- message: `${bestPerformer.symbol} is your best performer today (+${bestPerformer.change24h.toFixed(1)}%). Consider taking profits.`
+ message: `${bestPerformer.symbol} is your best performer (+${bestPerformer.unrealizedPnLPercent.toFixed(1)}% since purchase). Consider taking profits.`
  });
  }
 
@@ -140,7 +147,7 @@ export default function DynamicInsights({ holdings, metrics, totalValue }: Insig
  </div>
  <div className="mt-2">
  <div className="text-foreground font-bold text-sm">{bestPerformer.symbol}</div>
- <div className="text-vaultx-success font-semibold text-lg">+{bestPerformer.change24h.toFixed(1)}%</div>
+ <div className="text-vaultx-success font-semibold text-lg">+{bestPerformer.unrealizedPnLPercent.toFixed(1)}%</div>
  </div>
  </div>
 
@@ -151,7 +158,7 @@ export default function DynamicInsights({ holdings, metrics, totalValue }: Insig
  </div>
  <div className="mt-2">
  <div className="text-foreground font-bold text-sm">{worstPerformer.symbol}</div>
- <div className="text-vaultx-danger font-semibold text-lg">{worstPerformer.change24h.toFixed(1)}%</div>
+ <div className="text-vaultx-danger font-semibold text-lg">{worstPerformer.unrealizedPnLPercent.toFixed(1)}%</div>
  </div>
  </div>
  </div>

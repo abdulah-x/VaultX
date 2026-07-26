@@ -70,8 +70,11 @@ export default function PortfolioOverview({
  allocationData,
  dayChange,
  weekChange,
- dayChangeLabel = "24h Change",
- weekChangeLabel = "7d Change",
+ // Defaults are never actually shown -- both current callers pass an
+ // explicit label -- but a wrong default is a trap for the next one, since
+ // the portfolio endpoints carry no real 24h/7d delta.
+ dayChangeLabel = "Change",
+ weekChangeLabel = "Change",
 }: PortfolioOverviewProps) {
  const [hoveredSlice, setHoveredSlice] = useState<string | null>(null);
 

@@ -8,7 +8,7 @@ interface HeatmapData {
  name: string;
  value: number;
  allocation: number;
- change24h: number;
+ pnlPercent: number;
  price: number;
  color: string;
  [key: string]: any; // Add index signature for Treemap compatibility
@@ -20,7 +20,7 @@ interface PortfolioHeatmapProps {
  symbol: string;
  marketValue: number;
  allocation: number;
- change24h: number;
+ unrealizedPnLPercent: number;
  lastPrice: number;
  }>;
  totalValue: number;
@@ -48,15 +48,15 @@ export default function PortfolioHeatmap({ holdings, totalValue }: PortfolioHeat
  name: holding.symbol,
  value: holding.marketValue,
  allocation: holding.allocation,
- change24h: holding.change24h,
+ pnlPercent: holding.unrealizedPnLPercent,
  price: holding.lastPrice,
- color: getPerformanceColor(holding.change24h)
+ color: getPerformanceColor(holding.unrealizedPnLPercent)
  })).sort((a, b) => b.value - a.value);
  }, [holdings]);
 
  // Custom content renderer for treemap cells
  const CustomizedContent = (props: any) => {
- const { root, depth, x, y, width, height, index, name, value, allocation, change24h } = props;
+ const { root, depth, x, y, width, height, index, name, value, allocation, pnlPercent } = props;
  
  // Only show content for leaf nodes and if cell is large enough
  if (depth !== 1 || width < 60 || height < 40) return null;
@@ -119,7 +119,7 @@ export default function PortfolioHeatmap({ holdings, totalValue }: PortfolioHeat
  fontWeight="bold"
  style={{ textShadow: '1px 1px 2px rgba(0,0,0,0.8)' }}
  >
- {change24h >= 0 ? '+' : ''}{change24h.toFixed(1)}%
+ {pnlPercent >= 0 ? '+' : ''}{pnlPercent.toFixed(1)}%
  </text>
  )}
  </g>
@@ -147,14 +147,14 @@ export default function PortfolioHeatmap({ holdings, totalValue }: PortfolioHeat
  </span>
  </div>
  <div className="flex justify-between gap-4">
- <span className="text-muted-foreground">24h Change:</span>
+ <span className="text-muted-foreground">Unrealized P&L:</span>
  <span
  className={`font-mono font-semibold tabular-nums ${
- data.change24h >= 0 ? "text-vaultx-success" : "text-vaultx-danger"
+ data.pnlPercent >= 0 ? "text-vaultx-success" : "text-vaultx-danger"
  }`}
  >
- {data.change24h >= 0 ? "+" : ""}
- {data.change24h.toFixed(2)}%
+ {data.pnlPercent >= 0 ? "+" : ""}
+ {data.pnlPercent.toFixed(2)}%
  </span>
  </div>
  <div className="flex justify-between gap-4">
@@ -187,7 +187,7 @@ export default function PortfolioHeatmap({ holdings, totalValue }: PortfolioHeat
  </div>
 
  <div className="text-muted-foreground mb-4 text-sm">
- Size = Allocation • Color = 24h Performance
+ Size = Allocation • Color = Unrealized P&L
  </div>
 
  <div className="w-full" style={{ height: '320px' }}>
@@ -207,8 +207,8 @@ export default function PortfolioHeatmap({ holdings, totalValue }: PortfolioHeat
  {/* Performance Summary */}
  <div className="mt-4 flex items-center justify-between text-sm">
  <div className="text-muted-foreground">
- {enhancedHeatmapData.filter((d: HeatmapData) => d.change24h > 0).length} assets up •{" "}
- {enhancedHeatmapData.filter((d: HeatmapData) => d.change24h <= 0).length} assets down
+ {enhancedHeatmapData.filter((d: HeatmapData) => d.pnlPercent > 0).length} assets up •{" "}
+ {enhancedHeatmapData.filter((d: HeatmapData) => d.pnlPercent <= 0).length} assets down
  </div>
  <div className="text-foreground">
  Largest holding: {enhancedHeatmapData[0]?.name} (
