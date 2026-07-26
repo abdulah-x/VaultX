@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import { useRouter } from "next/navigation";
 import { useAuth } from "@/providers/AuthProvider";
 import { api } from "@/lib/api";
 import AppLayout from "@/components/layout/AppLayout";
@@ -33,6 +34,7 @@ function Toggle({ checked, onChange }: { checked: boolean; onChange: (v: boolean
 
 export default function SettingsPage() {
  const { user, logout, updateUserProfile } = useAuth();
+ const router = useRouter();
 
  const [activeTab, setActiveTab] = useState<Tab>("profile");
  const [saving, setSaving] = useState(false);
@@ -77,6 +79,10 @@ export default function SettingsPage() {
 
  const handleChangePassword = async () => {
  setPassError("");
+ if (!passwords.current) {
+ setPassError("Enter your current password.");
+ return;
+ }
  if (passwords.newPass !== passwords.confirm) {
  setPassError("New passwords don't match.");
  return;
@@ -87,13 +93,21 @@ export default function SettingsPage() {
  }
  setSaving(true);
  try {
- await api.auth.updateProfile({ password: passwords.newPass });
- setPasswords({ current: "", newPass: "", confirm: "" });
- setSaved(true);
- setTimeout(() => setSaved(false), 2500);
+ // Not api.auth.updateProfile: that hits PUT /auth/profile, whose
+ // request model has no password field at all -- a password sent there
+ // is silently dropped by the backend, so the request "succeeds" while
+ // nothing changes. This is the endpoint that actually verifies
+ // current_password and updates it.
+ await api.auth.changePassword(passwords.current, passwords.newPass);
+ // The backend revokes every outstanding token for this account the
+ // moment the password changes (including the one this request just
+ // used), so the current session is already dead -- force a real
+ // logout/redirect instead of leaving the UI showing a page whose next
+ // API call will 401 with no explanation.
+ await logout();
+ router.push("/login");
  } catch (err: any) {
- setPassError(err?.response?.data?.detail || "Failed to change password.");
- } finally {
+ setPassError(err?.response?.data?.error?.message || err?.response?.data?.detail || "Failed to change password.");
  setSaving(false);
  }
  };

@@ -109,6 +109,17 @@ export const api = {
       const response = await axiosInstance.put('/api/auth/profile', data);
       return response.data;
     },
+    // A distinct endpoint from updateProfile on purpose: /auth/profile has
+    // no password field at all (silently ignores one if sent), and this one
+    // verifies current_password server-side before accepting a new one, then
+    // revokes every other outstanding token for the account.
+    changePassword: async (currentPassword: string, newPassword: string) => {
+      const response = await axiosInstance.post('/api/auth/change-password', {
+        current_password: currentPassword,
+        new_password: newPassword,
+      });
+      return response.data;
+    },
   },
 
   // Portfolio endpoints
