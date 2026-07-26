@@ -4,6 +4,7 @@ Automatically sync Binance portfolio data with local database
 """
 from fastapi import APIRouter, Depends, HTTPException, BackgroundTasks
 from sqlalchemy.orm import Session
+from sqlalchemy.exc import IntegrityError
 from typing import Dict, Any, List
 from decimal import Decimal
 from datetime import datetime, timedelta
@@ -40,19 +41,33 @@ def get_or_create_asset(db: Session, symbol: str) -> Asset:
     """Fetch the Asset row for a ticker symbol, creating a minimal one if absent.
 
     Holdings reference assets by FK, so a balance sync must ensure the asset
-    exists before it can upsert the holding.
+    exists before it can upsert the holding. This is shared by orders.py,
+    trade_import.py, and portfolio_sync.py -- any two of those racing on the
+    very first sighting of a symbol (a genuinely new listing, or simply two
+    users' first trade on the same pair landing in the same instant) both see
+    no row and both try to insert one. assets.symbol is UNIQUE, so the loser
+    used to raise an uncaught IntegrityError straight out of this helper,
+    aborting whatever order fill / import / sync called it -- proven live via
+    a concurrency test that had one thread's entire BUY fill silently vanish.
+    Caught here with the same SAVEPOINT-and-retry pattern used at the Holding
+    level, so every caller gets the fix for free.
     """
     asset = db.query(Asset).filter(Asset.symbol == symbol).first()
-    if asset is None:
-        asset = Asset(
-            symbol=symbol,
-            name=symbol,
-            asset_type='cryptocurrency',
-            is_base_currency=symbol in STABLECOINS,
-        )
-        db.add(asset)
-        db.flush()  # assign asset.id without ending the transaction
-    return asset
+    if asset is not None:
+        return asset
+    try:
+        with db.begin_nested():
+            asset = Asset(
+                symbol=symbol,
+                name=symbol,
+                asset_type='cryptocurrency',
+                is_base_currency=symbol in STABLECOINS,
+            )
+            db.add(asset)
+            db.flush()  # assign asset.id without ending the transaction
+        return asset
+    except IntegrityError:
+        return db.query(Asset).filter(Asset.symbol == symbol).one()
 
 class AdvancedPortfolioSync:
     """Advanced portfolio synchronization with Binance"""
@@ -252,10 +267,16 @@ class AdvancedPortfolioSync:
             # Batch-resolve existing holdings for this user across all synced
             # assets in one query, instead of one query per asset in the loop.
             asset_ids = [a.id for a in asset_by_symbol.values()]
+            # with_for_update() locks every matched row for the rest of this
+            # transaction, so a concurrent order fill (orders.py::_record_fill,
+            # which now takes the same lock) updating one of these same
+            # holdings blocks here instead of both this sync and that fill
+            # reading the same pre-update row and one silently discarding the
+            # other's write on commit.
             existing_holdings = db.query(Holding).filter(
                 Holding.user_id == user_id,
                 Holding.asset_id.in_(asset_ids)
-            ).all()
+            ).with_for_update().all()
             holding_by_asset_id = {h.asset_id: h for h in existing_holdings}
 
             for asset_data in assets:
@@ -283,6 +304,16 @@ class AdvancedPortfolioSync:
                 else:
                     # New holding: seed cost basis from current value so initial
                     # unrealized P&L is zero until real trades are imported.
+                    #
+                    # with_for_update() above only locks rows that already
+                    # exist, so it can't prevent this sync and a concurrent
+                    # order fill (orders.py::_record_fill) both finding no
+                    # holding for a brand-new asset and both trying to insert
+                    # one. The UNIQUE(user_id, asset_id) constraint turns the
+                    # loser into an IntegrityError instead of a silent
+                    # duplicate row; a SAVEPOINT catches just that insert and
+                    # falls through to updating the row the other transaction
+                    # already created, rather than aborting the whole sync.
                     new_holding = Holding(
                         user_id=user_id,
                         asset_id=asset.id,
@@ -295,7 +326,24 @@ class AdvancedPortfolioSync:
                         current_value_usd=value,
                         unrealized_pnl_usd=Decimal('0'),
                     )
-                    db.add(new_holding)
+                    try:
+                        with db.begin_nested():
+                            db.add(new_holding)
+                            db.flush()
+                    except IntegrityError:
+                        winner = (
+                            db.query(Holding)
+                            .filter(Holding.user_id == user_id, Holding.asset_id == asset.id)
+                            .with_for_update()
+                            .first()
+                        )
+                        winner.total_quantity = total_qty
+                        winner.available_quantity = free_qty
+                        winner.locked_quantity = locked_qty
+                        winner.current_price_usd = price
+                        winner.current_value_usd = value
+                        if price is not None and winner.total_cost_usd is not None:
+                            winner.unrealized_pnl_usd = (value or Decimal('0')) - winner.total_cost_usd
                     created_count += 1
 
             db.commit()

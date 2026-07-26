@@ -16,6 +16,7 @@ from datetime import datetime
 import logging
 
 from sqlalchemy.orm import Session
+from sqlalchemy.exc import IntegrityError
 
 from core.dependencies import get_current_active_user, get_db
 from core.errors import ExternalAPIError
@@ -114,23 +115,50 @@ def _record_fill(db: Session, user_id: int, order_result: Dict[str, Any]) -> Dic
     base_asset = get_or_create_asset(db, base_symbol)
     quote_asset = get_or_create_asset(db, quote_symbol)
 
+    # with_for_update() locks the matched row (Postgres SELECT ... FOR UPDATE)
+    # for the rest of this transaction, so a second concurrent fill for the
+    # same user+asset blocks here instead of reading the same pre-update
+    # quantity/cost this transaction is about to overwrite. Without it, two
+    # near-simultaneous fills (two quick orders, or a fill racing
+    # portfolio_sync) both read the same old_qty/old_cost, compute
+    # independently, and the second commit silently discards the first's
+    # update -- a lost-update race with no error raised anywhere.
     holding = (
         db.query(Holding)
         .filter(Holding.user_id == user_id, Holding.asset_id == base_asset.id)
+        .with_for_update()
         .first()
     )
     realized_pnl = None
 
     if side == "BUY":
         if holding is None:
-            holding = Holding(
-                user_id=user_id, asset_id=base_asset.id,
-                total_quantity=Decimal("0"), available_quantity=Decimal("0"),
-                locked_quantity=Decimal("0"), average_cost_usd=Decimal("0"),
-                total_cost_usd=Decimal("0"),
-            )
-            db.add(holding)
-            db.flush()
+            # with_for_update() above can only lock a row that already exists --
+            # it does nothing to prevent two concurrent first-ever-buy fills for
+            # the same user+asset both finding no row and both trying to insert
+            # one. The UNIQUE(user_id, asset_id) constraint on holdings (added
+            # after this exact race was flagged) turns the second insert into an
+            # IntegrityError instead of a silent duplicate row; a SAVEPOINT lets
+            # us catch just that and fall through to updating the row the other
+            # transaction just created, rather than 500ing an order that already
+            # executed on Binance.
+            try:
+                with db.begin_nested():
+                    holding = Holding(
+                        user_id=user_id, asset_id=base_asset.id,
+                        total_quantity=Decimal("0"), available_quantity=Decimal("0"),
+                        locked_quantity=Decimal("0"), average_cost_usd=Decimal("0"),
+                        total_cost_usd=Decimal("0"),
+                    )
+                    db.add(holding)
+                    db.flush()
+            except IntegrityError:
+                holding = (
+                    db.query(Holding)
+                    .filter(Holding.user_id == user_id, Holding.asset_id == base_asset.id)
+                    .with_for_update()
+                    .first()
+                )
             if holding.first_acquired_at is None:
                 holding.first_acquired_at = executed_at
         old_qty = holding.total_quantity or Decimal("0")
