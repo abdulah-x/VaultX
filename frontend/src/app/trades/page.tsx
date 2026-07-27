@@ -55,8 +55,15 @@ export default function TradesPage() {
 
   const stats = [
     {
+      // Sibling cards (volume, realized P&L, buy/sell) are all scoped to the
+      // current page's `trades` array, matching the "(page)" label -- this one
+      // showed pagination.totalCount instead, the count across every page, so
+      // a filter with 47 trades across 3 pages labeled itself "Trades (page):
+      // 47" while page 1 held only 20. The true total is already shown
+      // correctly in the pagination footer below ("Page 1 of 3 · 47 trades");
+      // this card just needs to match what it claims to be.
       label: "Trades (page)",
-      value: String(pagination.totalCount || trades.length),
+      value: String(trades.length),
       icon: Activity,
       color: "text-primary",
     },
