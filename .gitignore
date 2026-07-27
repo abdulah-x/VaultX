@@ -126,6 +126,7 @@ keys/
 *.md
 !README.md
 !TESTING_GUIDE.md
+!DESIGN_BRIEF.md
 
 # Environment-specific files
 backend/.env
