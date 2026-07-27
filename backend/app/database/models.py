@@ -112,9 +112,16 @@ class PriceHistory(Base):
     __tablename__ = "price_history"
     # TimescaleDB requires the hypertable partitioning column (`timestamp`) to be
     # part of any primary key, hence the composite key instead of a plain `id` PK.
+    #
+    # UNIQUE, not just an index, on (asset_id, timestamp): a Redis Streams
+    # redelivery (XAUTOCLAIM reclaiming a tick the writer already committed
+    # before it could ack) previously re-inserted the same tick as a second row
+    # with no error at all -- chart/backtest noise that grows quietly forever.
+    # A unique constraint on a hypertable must include the partitioning column,
+    # which timestamp already is here.
     __table_args__ = (
         PrimaryKeyConstraint("id", "timestamp"),
-        Index("ix_price_history_asset_timestamp", "asset_id", "timestamp"),
+        UniqueConstraint("asset_id", "timestamp", name="uq_price_history_asset_timestamp"),
     )
 
     id = Column(Integer, autoincrement=True, nullable=False)

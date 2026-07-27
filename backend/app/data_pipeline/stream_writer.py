@@ -13,7 +13,6 @@ import logging
 from datetime import datetime
 from decimal import Decimal, InvalidOperation
 
-from sqlalchemy import insert
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 
 from core.redis_streams import redis_streams
@@ -76,7 +75,13 @@ async def _write_batch(entries: list) -> list:
                 latest_price_by_asset[asset_id] = (price, ts)
 
         if history_rows:
-            db.execute(insert(PriceHistory), history_rows)
+            # ON CONFLICT DO NOTHING against uq_price_history_asset_timestamp:
+            # a stale-pending reclaim (claim_stale_pending above) can hand back
+            # a tick this writer already committed in an earlier batch before
+            # crashing pre-ack -- without this, that tick lands twice.
+            stmt = pg_insert(PriceHistory).values(history_rows)
+            stmt = stmt.on_conflict_do_nothing(index_elements=["asset_id", "timestamp"])
+            db.execute(stmt)
 
         for asset_id, (price, ts) in latest_price_by_asset.items():
             stmt = pg_insert(CurrentPrice).values(
