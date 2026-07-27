@@ -13,6 +13,7 @@ from collections import defaultdict
 from core.dependencies import get_db, get_current_active_user
 from core.decimal_utils import stringify_decimals
 from database.models import User, Holding, Trade, Asset, CurrentPrice
+from api.trade_import import split_symbol
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
@@ -252,8 +253,15 @@ class AdvancedPnLCalculator:
                         # out with realized_pnl (which only counts sell_quantity).
                         total_sold += sell_quantity * price
             
-            # Calculate unrealized P&L for remaining position
-            current_price = Decimal(str(current_prices.get(symbol.replace('USDT', '').replace('BUSD', ''), 0)))
+            # Calculate unrealized P&L for remaining position.
+            # current_prices is keyed by base asset symbol (e.g. "BTC"), not the
+            # trading pair -- the ad hoc USDT/BUSD stripping here missed every
+            # other quote asset (FDUSD/USDC/TUSD/USDP/BTC/ETH/BNB per
+            # trade_import.QUOTE_ASSETS), so e.g. an ETHBTC position always
+            # looked up "ETHBTC" (never a key), silently priced at 0, and its
+            # unrealized P&L was always 0 regardless of the real price.
+            base_symbol, _ = split_symbol(symbol)
+            current_price = Decimal(str(current_prices.get(base_symbol, 0)))
             unrealized_pnl = position * (current_price - avg_cost) if position > 0 and current_price > 0 else Decimal('0')
             
             asset_pnl = {
