@@ -38,6 +38,14 @@ export default function DashboardPage() {
   // Realized P&L card used to be hardcoded to $0.
   const capitalGain = kpis.data?.kpis?.capital_gain;
   const irr = kpis.data?.kpis?.growth_rate?.irr_percent;
+  // usePortfolioKpis() is a separate query from usePortfolio(), which is the
+  // only thing the page's own isLoading gate above waits on -- so kpis often
+  // resolves a beat later. Without gating on it too, every capitalGain-derived
+  // figure below rendered its `?? 0` fallback as a real "$0.00" the instant the
+  // page painted, then visibly flashed to the true number once kpis arrived.
+  // The IRR card already avoided this correctly (see its existing "—"
+  // fallback); the fix here is applying that same pattern to its siblings.
+  const kpisReady = !kpis.isLoading && kpis.data !== undefined;
 
   const performanceData = buildRealizedPnlSeries(performance.data, selectedTimeframe);
 
@@ -146,11 +154,15 @@ export default function DashboardPage() {
             <MetricCard
               title="Total Capital"
               value={usd(totals?.totalValue)}
-              change={{
-                value: signedUsd(capitalGain?.today_usd ?? 0),
-                percentage: signedPct(capitalGain?.today_percent ?? 0),
-                isPositive: toNum(capitalGain?.today_usd) >= 0,
-              }}
+              change={
+                kpisReady
+                  ? {
+                      value: signedUsd(capitalGain?.today_usd ?? 0),
+                      percentage: signedPct(capitalGain?.today_percent ?? 0),
+                      isPositive: toNum(capitalGain?.today_usd) >= 0,
+                    }
+                  : undefined
+              }
               icon={<DollarSign className="w-5 h-5 text-primary" />}
             />
             <MetricCard
@@ -165,11 +177,15 @@ export default function DashboardPage() {
             />
             <MetricCard
               title="Realized P&L"
-              value={signedUsd(capitalGain?.realized_usd ?? 0)}
-              change={{
-                value: "closed positions",
-                isPositive: toNum(capitalGain?.realized_usd) >= 0,
-              }}
+              value={kpisReady ? signedUsd(capitalGain?.realized_usd ?? 0) : "—"}
+              change={
+                kpisReady
+                  ? {
+                      value: "closed positions",
+                      isPositive: toNum(capitalGain?.realized_usd) >= 0,
+                    }
+                  : undefined
+              }
               icon={<Target className="w-5 h-5 text-vaultx-success" />}
             />
             <MetricCard
