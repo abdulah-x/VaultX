@@ -18,8 +18,6 @@ export default function LoginPage() {
  });
  const [errors, setErrors] = useState<{email?: string; password?: string}>({});
  const [isLoading, setIsLoading] = useState(false);
- const [loginAttempts, setLoginAttempts] = useState(0);
- const [showSecurityTips, setShowSecurityTips] = useState(false);
  const [showGoogleModal, setShowGoogleModal] = useState(false);
 
  // Redirect based on authentication and onboarding status
@@ -67,27 +65,20 @@ export default function LoginPage() {
  
  try {
  await login(formData.email, formData.password);
- 
+
  // If login is successful, the useEffect above will handle redirect
- setLoginAttempts(0);
  console.log('✅ Login successful, redirecting to dashboard...');
- 
+
  } catch (error) {
  console.error('Login failed:', error);
- const newAttempts = loginAttempts + 1;
- setLoginAttempts(newAttempts);
- 
- if (newAttempts >= 3) {
- setErrors({ 
- email: 'Too many failed attempts. Account temporarily locked for security. Please try again in 15 minutes.' 
- });
- setShowSecurityTips(true);
- } else {
- const errorMessage = authError || 'Invalid email or password';
- setErrors({ 
- email: `${errorMessage}. ${3 - newAttempts} attempts remaining before temporary lockout.` 
- });
- }
+ // The backend already throttles real login attempts server-side (10 per
+ // IP+username per 15 minutes, Redis-backed) and returns an accurate
+ // "Too many failed login attempts" message once that's actually hit. A
+ // client-side counter here previously fabricated its own "locked for 15
+ // minutes" claim after just 3 attempts -- more than 3x too eager, not
+ // enforced (the form stayed fully usable), and it overwrote the real
+ // backend message instead of showing it. Just show what the server said.
+ setErrors({ email: authError || 'Invalid email or password' });
  } finally {
  setIsLoading(false);
  }
@@ -244,7 +235,6 @@ export default function LoginPage() {
  </form>
 
  {/* Security Notice */}
- {!showSecurityTips ? (
  <div className="mt-6 p-4 bg-secondary border border-border rounded-xl">
  <div className="flex items-start gap-3">
  <svg className="w-5 h-5 text-primary mt-0.5 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -258,37 +248,6 @@ export default function LoginPage() {
  </div>
  </div>
  </div>
- ) : (
- <div className="mt-6 p-4 bg-vaultx-danger/20 border border-vaultx-danger/40 rounded-xl">
- <div className="flex items-start gap-3">
- <svg className="w-5 h-5 text-vaultx-danger mt-0.5 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
- <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-2.5L13.732 4c-.77-.833-1.964-.833-2.732 0L3.732 16.5c-.77.833.192 2.5 1.732 2.5z" />
- </svg>
- <div className="space-y-3">
- <div>
- <h4 className="text-sm font-medium text-vaultx-danger mb-1">Account Temporarily Locked</h4>
- <p className="text-xs text-vaultx-danger leading-relaxed">
- For your security, this account has been temporarily locked due to multiple failed login attempts.
- </p>
- </div>
- <div>
- <h5 className="text-xs font-medium text-foreground mb-2">Security Tips:</h5>
- <ul className="text-xs text-foreground space-y-1">
- <li>• Double-check your email address for typos</li>
- <li>• Ensure Caps Lock is not enabled</li>
- <li>• Try resetting your password if you&apos;re unsure</li>
- <li>• Contact support if you believe this is an error</li>
- </ul>
- </div>
- <div className="pt-2 border-t border-vaultx-danger/40">
- <p className="text-xs text-vaultx-danger">
- Access will be restored automatically in <span className="font-medium text-vaultx-danger">15 minutes</span>
- </p>
- </div>
- </div>
- </div>
- </div>
- )}
 
  {/* Security Notice */}
  <div className=" border border-primary/40 rounded-xl p-4 mb-6">
