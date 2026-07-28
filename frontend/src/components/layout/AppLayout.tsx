@@ -4,7 +4,7 @@ import { useState, useEffect, useRef, ReactNode } from "react";
 import Image from "next/image";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { motion, AnimatePresence } from "framer-motion";
+import { motion, AnimatePresence, MotionConfig } from "framer-motion";
 import {
  TrendingUp,
  PieChart as PieChartIcon,
@@ -158,6 +158,15 @@ export default function AppLayout({ children }: AppLayoutProps) {
  }
 
  return (
+ // The global CSS reduced-motion rule (globals.css) only shortens CSS
+ // transitions/animations -- it has no effect on Framer Motion, which
+ // drives its own animations via rAF/inline styles rather than CSS
+ // `transition`/`animation` properties. Without this, the dropdown
+ // fades, the mobile drawer's spring slide-in, and the overlay fade below
+ // all still ran at full motion for anyone with prefers-reduced-motion
+ // set, silently ignoring the OS-level setting the rest of the app (and
+ // the landing page's 3D/GSAP work) already respects.
+ <MotionConfig reducedMotion="user">
  <div className="bg-background min-h-screen">
  {/* ── Header ──────────────────────────────────────────────────────── */}
  <header className="bg-background/80 border-border sticky top-0 z-30 border-b backdrop-blur-md">
@@ -360,5 +369,6 @@ export default function AppLayout({ children }: AppLayoutProps) {
  <main className="relative z-10 flex-1 overflow-auto">{children}</main>
  </div>
  </div>
+ </MotionConfig>
  );
 }
