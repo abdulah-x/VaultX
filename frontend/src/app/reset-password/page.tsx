@@ -77,7 +77,12 @@ function ResetPasswordForm() {
 
  if (!response.ok) {
  const errorData = await response.json();
- throw new Error(errorData.detail || 'Failed to reset password');
+ // This API's error envelope is { error: { message } }, not FastAPI's
+ // default { detail } -- reading only `detail` meant every real
+ // backend message here (including "This reset link has already been
+ // used", added specifically to explain the single-use-token rule) was
+ // silently replaced by the generic fallback below.
+ throw new Error(errorData?.error?.message || errorData.detail || 'Failed to reset password');
  }
 
  setSuccess(true);

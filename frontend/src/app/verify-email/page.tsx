@@ -36,7 +36,12 @@ export default function VerifyEmailPage() {
 
  if (!response.ok) {
  const errorData = await response.json();
- throw new Error(errorData.detail || 'Failed to send verification code');
+ // This API's error envelope is { error: { message } }, not FastAPI's
+ // default { detail } -- reading only `detail` meant a real rate-limit
+ // message (send-verification is throttled to 5/hour) was silently
+ // replaced by the generic fallback below, indistinguishable from any
+ // other failure.
+ throw new Error(errorData?.error?.message || errorData.detail || 'Failed to send verification code');
  }
 
  setResendMessage("Verification code sent! Check your email.");
@@ -70,7 +75,9 @@ export default function VerifyEmailPage() {
 
  if (!response.ok) {
  const errorData = await response.json();
- throw new Error(errorData.detail || 'Verification failed');
+ // Same envelope mismatch as handleResend above: real messages like
+ // "Invalid or expired verification code" were never shown.
+ throw new Error(errorData?.error?.message || errorData.detail || 'Verification failed');
  }
 
  setSuccess(true);

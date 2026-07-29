@@ -26,7 +26,10 @@ export default function ForgotPasswordPage() {
 
  if (!response.ok) {
  const errorData = await response.json();
- throw new Error(errorData.detail || 'Failed to send reset email');
+ // This API's error envelope is { error: { message } }, not FastAPI's
+ // default { detail } -- reading only `detail` meant every real backend
+ // message here was silently replaced by the generic fallback below.
+ throw new Error(errorData?.error?.message || errorData.detail || 'Failed to send reset email');
  }
 
  setIsSubmitted(true);
