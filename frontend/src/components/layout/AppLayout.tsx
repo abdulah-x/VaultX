@@ -127,6 +127,23 @@ export default function AppLayout({ children }: AppLayoutProps) {
  return () => document.removeEventListener("mousedown", handleClickOutside);
  }, [userMenuOpen, notificationsOpen]);
 
+ // Close menus/drawer on Escape. The click-outside handler above covers mouse
+ // users; a keyboard user tabbed into the notifications or user-menu dropdown
+ // (or the mobile drawer) previously had no way to dismiss it except tabbing
+ // all the way back out or re-clicking the toggle button.
+ useEffect(() => {
+ const handleEscape = (event: KeyboardEvent) => {
+ if (event.key !== "Escape") return;
+ setUserMenuOpen(false);
+ setNotificationsOpen(false);
+ setSidebarOpen(false);
+ };
+ if (userMenuOpen || notificationsOpen || sidebarOpen) {
+ document.addEventListener("keydown", handleEscape);
+ }
+ return () => document.removeEventListener("keydown", handleEscape);
+ }, [userMenuOpen, notificationsOpen, sidebarOpen]);
+
  const getDisplayName = () => {
  if (user?.firstName && user?.lastName) return `${user.firstName} ${user.lastName}`;
  if (user?.firstName) return user.firstName;
