@@ -227,11 +227,15 @@ export default function DashboardPage() {
                 allocationData={allocationData}
                 dayChangeLabel="Today"
                 weekChangeLabel="Unrealized"
-                dayChange={{
-                  value: signedUsd(capitalGain?.today_usd ?? 0),
-                  percentage: signedPct(capitalGain?.today_percent ?? 0),
-                  isPositive: toNum(capitalGain?.today_usd) >= 0,
-                }}
+                dayChange={
+                  kpisReady
+                    ? {
+                        value: signedUsd(capitalGain?.today_usd ?? 0),
+                        percentage: signedPct(capitalGain?.today_percent ?? 0),
+                        isPositive: toNum(capitalGain?.today_usd) >= 0,
+                      }
+                    : { value: "—", percentage: "—", isPositive: true }
+                }
                 weekChange={{
                   value: signedUsd(totals?.unrealizedPnL),
                   percentage: signedPct(totals?.unrealizedPnLPercent),
