@@ -3,7 +3,7 @@
 import { useState, useRef, useEffect } from "react";
 import { Send, Sparkles, Bot, User, Loader2, RotateCcw, Info } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
-import { api } from "@/lib/api";
+import { useAdvisorChat } from "@/hooks/queries";
 
 interface Message {
  id: string;
@@ -112,9 +112,15 @@ export default function AdvisorChat() {
  },
  ]);
  const [input, setInput] = useState("");
- const [isLoading, setIsLoading] = useState(false);
  const bottomRef = useRef<HTMLDivElement>(null);
  const inputRef = useRef<HTMLInputElement>(null);
+ // The dedicated mutation hook (hooks/queries/index.ts) already sets
+ // retry: false -- deliberate, since each question is a distinct action
+ // with a real cost and must never be silently replayed. This component
+ // previously called api.advisor.chat() directly with its own hand-rolled
+ // isLoading state instead, duplicating what the hook already provides.
+ const advisorMutation = useAdvisorChat();
+ const isLoading = advisorMutation.isPending;
 
  useEffect(() => {
  bottomRef.current?.scrollIntoView({ behavior: "smooth" });
@@ -133,15 +139,10 @@ export default function AdvisorChat() {
 
  setMessages((prev) => [...prev, userMsg]);
  setInput("");
- setIsLoading(true);
 
  try {
- const response = await api.advisor.chat(trimmed);
- const answer =
- response?.answer ||
- response?.message ||
- response?.response ||
- "I couldn't generate a response. Please try again.";
+ const response = await advisorMutation.mutateAsync(trimmed);
+ const answer = response?.answer || "I couldn't generate a response. Please try again.";
 
  setMessages((prev) => [
  ...prev,
@@ -179,7 +180,6 @@ export default function AdvisorChat() {
  },
  ]);
  } finally {
- setIsLoading(false);
  inputRef.current?.focus();
  }
  };
