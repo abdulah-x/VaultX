@@ -1,9 +1,18 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { Mail, CheckCircle2, AlertCircle } from "lucide-react";
+
+// The backend throttles /auth/send-verification to 5 requests/hour, but gives
+// no per-request "seconds until you may try again" value to build an exact
+// countdown from. This is a client-side courtesy cooldown, not a mirror of
+// the real limit: it just stops someone from mashing "Resend" a dozen times
+// in the first ten seconds -- every one of those would have silently counted
+// against the same 5/hour budget with no feedback until the 6th attempt
+// finally surfaced the real rate-limit error.
+const RESEND_COOLDOWN_SECONDS = 30;
 
 export default function VerifyEmailPage() {
  const router = useRouter();
@@ -14,12 +23,20 @@ export default function VerifyEmailPage() {
  const [error, setError] = useState("");
  const [success, setSuccess] = useState(false);
  const [resendMessage, setResendMessage] = useState("");
+ const [cooldown, setCooldown] = useState(0);
+
+ useEffect(() => {
+ if (cooldown <= 0) return;
+ const timer = setInterval(() => setCooldown((s) => Math.max(0, s - 1)), 1000);
+ return () => clearInterval(timer);
+ }, [cooldown]);
 
  const handleResend = async () => {
  if (!email) {
  setError("Please enter your email address");
  return;
  }
+ if (cooldown > 0) return;
 
  setIsSending(true);
  setError("");
@@ -46,6 +63,7 @@ export default function VerifyEmailPage() {
 
  setResendMessage("Verification code sent! Check your email.");
  setTimeout(() => setResendMessage(""), 5000);
+ setCooldown(RESEND_COOLDOWN_SECONDS);
  } catch (err: any) {
  setError(err.message || "Failed to send verification code");
  } finally {
@@ -227,10 +245,14 @@ export default function VerifyEmailPage() {
  <button
  type="button"
  onClick={handleResend}
- disabled={isSending}
+ disabled={isSending || cooldown > 0}
  className="text-sm text-vaultx-secondary hover:text-muted-foreground transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
  >
- {isSending ? 'Sending...' : "Didn't receive the code? Resend"}
+ {isSending
+ ? 'Sending...'
+ : cooldown > 0
+ ? `Resend available in ${cooldown}s`
+ : "Didn't receive the code? Resend"}
  </button>
  </div>
 
