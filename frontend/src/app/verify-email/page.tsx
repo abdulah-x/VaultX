@@ -256,15 +256,11 @@ export default function VerifyEmailPage() {
  </button>
  </div>
 
- {/* Skip for now */}
- <div className="text-center">
- <Link 
- href="/dashboard" 
- className="text-sm text-muted-foreground hover:text-muted-foreground transition-colors"
- >
- Skip for now →
- </Link>
- </div>
+ {/* There is no "skip" path: every real dashboard endpoint requires a
+ verified account server-side (get_current_active_user -- 403 "Email
+ address not verified" otherwise), so a link promising to bypass this
+ would only get the user bounced straight back here by the response
+ interceptor the instant the dashboard's first data call fired. */}
  </form>
  </div>
  </div>
