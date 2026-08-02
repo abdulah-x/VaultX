@@ -174,10 +174,147 @@
    sit in a displaced resting state.
    ═══════════════════════════════════════════════════════════════════════════ */
 
+/* ── Design system ──────────────────────────────────────────────────────────
+   Every section on this page used to pick its own width and padding -- widths
+   ran 1240/1040/800/760/640 and vertical padding was a different pair of
+   Tailwind steps each time. Nothing was wrong individually; collectively there
+   was no rhythm, which is most of why the page read as unfinished.
+
+   Sections now take their measurements from here. Colour is expressed the same
+   way, as four ink levels and a line colour, so a section can invert the whole
+   palette by redefining five custom properties (see .vx-act-light) rather than
+   rewriting every child. */
 .vx-landing {
+  /* Ink */
   --vx-bg: #07080e;
+  --vx-ink: #e2e8f0;
+  --vx-ink-dim: #94a3b8;
+  --vx-ink-faint: #64748b;
+  --vx-line: rgba(255, 255, 255, 0.08);
+  --vx-surface: rgba(255, 255, 255, 0.03);
+
+  /* Brand gradient stops. Cyan/violet is the identity; amber is the second
+     accent, reserved for money -- realised P&L, cost basis, capital. Having
+     exactly one warm note in a cool palette is what keeps it from reading as
+     a single flat wash of slate. */
+  --vx-cyan: #22d3ee;
+  --vx-violet: #8b5cf6;
+  --vx-accent: #f5b544;
+
+  /* Measure */
+  --vx-container: 1240px;
+  --vx-reading: 720px;
+  --vx-gutter: clamp(20px, 5vw, 64px);
+  --vx-section-y: clamp(72px, 9vw, 128px);
+
   background: var(--vx-bg);
+  color: var(--vx-ink);
   font-family: var(--font-sans);
+}
+
+.vx-section {
+  position: relative;
+  overflow: hidden;
+  padding: var(--vx-section-y) var(--vx-gutter);
+  background: var(--vx-bg);
+  color: var(--vx-ink);
+}
+.vx-container {
+  position: relative;
+  margin: 0 auto;
+  max-width: var(--vx-container);
+}
+.vx-reading {
+  max-width: var(--vx-reading);
+}
+
+/* The light act.
+
+   The page was one unbroken dark scroll from nav to footer, so every section
+   carried equal weight and none of them landed. Inverting one section in the
+   middle splits the page into two acts and gives the scroll a spine.
+
+   Paper rather than white: #f4f3ef is warm enough to read as a printed
+   research page, which is the register the Times display face is already in.
+   Pure white against this dark would read as a rendering bug. */
+.vx-act-light {
+  --vx-bg: #f4f3ef;
+  --vx-ink: #16181d;
+  --vx-ink-dim: #55595f;
+  --vx-ink-faint: #8a8f96;
+  --vx-line: rgba(0, 0, 0, 0.14);
+  --vx-surface: rgba(0, 0, 0, 0.02);
+  color-scheme: light;
+}
+
+/* Section eyebrow: mono index, label, and a hairline rule running to the edge
+   of the column. The ornament of a printed report rather than of a web page --
+   cheap to render, and it gives each section a top edge to sit against. */
+.vx-eyebrow {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  letter-spacing: 0.24em;
+  text-transform: uppercase;
+  color: var(--vx-ink-faint);
+  margin-bottom: clamp(28px, 4vw, 48px);
+}
+.vx-eyebrow-num {
+  color: var(--vx-accent);
+}
+.vx-eyebrow::after {
+  content: "";
+  flex: 1;
+  height: 1px;
+  background: var(--vx-line);
+}
+
+/* Scroll rail: fixed section index down the left gutter, driven by GSAP.
+   Suppressed below 1280px, where there is no gutter to spare. */
+.vx-rail {
+  position: fixed;
+  left: 26px;
+  top: 50%;
+  transform: translateY(-50%);
+  z-index: 40;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  pointer-events: none;
+}
+.vx-rail-item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-family: var(--font-mono);
+  font-size: 10px;
+  letter-spacing: 0.18em;
+  color: #475569;
+  opacity: 0.5;
+  transition:
+    opacity 0.35s ease,
+    color 0.35s ease;
+}
+.vx-rail-tick {
+  display: block;
+  width: 14px;
+  height: 1px;
+  background: currentColor;
+  transition: width 0.35s ease;
+}
+.vx-rail-item[data-active="true"] {
+  opacity: 1;
+  color: var(--vx-accent);
+}
+.vx-rail-item[data-active="true"] .vx-rail-tick {
+  width: 30px;
+}
+@media (max-width: 1279px) {
+  .vx-rail {
+    display: none;
+  }
 }
 
 /* ── Ambient background ─────────────────────────────────────────────────── */
@@ -278,13 +415,6 @@
   font-size: 12px;
   color: #c4b5fd;
   white-space: nowrap;
-}
-
-.vx-headline-gradient {
-  background: linear-gradient(90deg, #a78bfa, #93c5fd, #22d3ee);
-  -webkit-background-clip: text;
-  background-clip: text;
-  color: transparent;
 }
 
 /* ── Brand lockup ───────────────────────────────────────────────────────── */
@@ -572,81 +702,88 @@
   }
 }
 
-/* ── Feature cards ──────────────────────────────────────────────────────── */
-/* No transform here: framer-motion owns the card's y/scale on hover, and a
-   competing CSS transform on the same element would be overwritten mid-gesture. */
-.vx-feature-card {
-  transition:
-    border-color 0.3s ease,
-    box-shadow 0.3s ease;
+/* ── Specification sheet (features) ─────────────────────────────────────── */
+/* Two columns of ruled entries. Deliberately not cards: the hero preview, the
+   product window and the security panel are all bordered glass panels, so a
+   fourth set of them here read as filler. Rules and a mono index carry the
+   structure instead, and cost nothing to render.
+
+   Colours are ink tokens throughout, which is what lets this whole block
+   invert with .vx-act-light. */
+.vx-spec-grid {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  column-gap: clamp(32px, 5vw, 80px);
 }
-.vx-feature-card:hover {
-  border-color: rgba(139, 92, 246, 0.4);
-  box-shadow: 0 15px 35px -10px rgba(139, 92, 246, 0.25);
+@media (max-width: 860px) {
+  .vx-spec-grid {
+    grid-template-columns: 1fr;
+  }
 }
-.vx-feature-spotlight {
-  position: absolute;
-  inset: 0;
-  opacity: 0;
-  background: linear-gradient(to bottom, rgba(255, 255, 255, 0.04), transparent);
-  transition: opacity 0.5s ease;
-  pointer-events: none;
+
+.vx-spec-row {
+  position: relative;
+  padding: clamp(22px, 2.6vw, 32px) 0;
+  border-top: 1px solid var(--vx-line);
 }
-.vx-feature-card:hover .vx-feature-spotlight {
-  opacity: 1;
-}
-.vx-feature-icon-wrap {
-  transition:
-    box-shadow 0.3s ease,
-    transform 0.3s ease,
-    border-color 0.3s ease;
-}
-.vx-feature-card:hover .vx-feature-icon-wrap {
-  transform: scale(1.05);
-  border-color: rgba(167, 139, 250, 0.6);
-  box-shadow: 0 0 24px rgba(139, 92, 246, 0.45);
-}
-.vx-feature-title {
-  transition: color 0.3s ease;
-}
-.vx-feature-card:hover .vx-feature-title {
-  color: #ddd6fe;
-}
-.vx-feature-badge {
-  position: absolute;
-  top: -12px;
-  right: 24px;
-  z-index: 10;
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  background: rgba(15, 23, 42, 0.9);
-  border: 1px solid rgba(139, 92, 246, 0.4);
-  backdrop-filter: blur(12px);
-  padding: 4px 12px;
-  border-radius: 9999px;
-  font-size: 11px;
-  font-weight: 600;
-  color: #c4b5fd;
-  box-shadow: 0 0 15px rgba(139, 92, 246, 0.3);
-  white-space: nowrap;
-}
-.vx-feature-badge::before {
+/* The top rule is the entry's own edge, so the first row of each column needs
+   one and nothing needs a closing rule at the bottom of the block. */
+.vx-spec-row::after {
   content: "";
-  width: 6px;
-  height: 6px;
-  border-radius: 9999px;
-  background: #a78bfa;
-  animation: vx-badge-pulse 1.8s ease-in-out infinite;
+  position: absolute;
+  top: -1px;
+  left: 0;
+  width: 0;
+  height: 1px;
+  background: var(--vx-accent);
+  transition: width 0.45s cubic-bezier(0.22, 1, 0.36, 1);
 }
-@keyframes vx-badge-pulse {
-  0%,
-  100% {
-    opacity: 1;
-  }
-  50% {
-    opacity: 0.3;
-  }
+.vx-spec-row:hover::after {
+  width: 100%;
+}
+
+.vx-spec-head {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+.vx-spec-num {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  letter-spacing: 0.18em;
+  color: var(--vx-accent);
+}
+.vx-spec-icon {
+  width: 15px;
+  height: 15px;
+  color: var(--vx-ink-faint);
+  flex-shrink: 0;
+}
+.vx-spec-title {
+  margin: 0;
+  font-size: clamp(19px, 2vw, 22px);
+  font-weight: 700;
+  letter-spacing: -0.01em;
+  color: var(--vx-ink);
+}
+.vx-spec-body {
+  margin: 10px 0 0;
+  max-width: 46ch;
+  font-size: 15px;
+  line-height: 1.6;
+  color: var(--vx-ink-dim);
+}
+.vx-spec-badge {
+  display: inline-block;
+  margin-top: 12px;
+  font-family: var(--font-mono);
+  font-size: 10px;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: var(--vx-ink-faint);
+  border: 1px solid var(--vx-line);
+  border-radius: 3px;
+  padding: 3px 8px;
 }
 
 /* ── Security panel ─────────────────────────────────────────────────────── */
@@ -904,13 +1041,6 @@
 .vx-reveal-in {
   opacity: 1;
   transform: translateY(0);
-}
-
-/* ── Hero two-column collapse ───────────────────────────────────────────── */
-@media (max-width: 1100px) {
-  .vx-hero-grid {
-    grid-template-columns: 1fr !important;
-  }
 }
 
 @media (prefers-reduced-motion: reduce) {
