@@ -1,23 +1,34 @@
 "use client";
 
 import { useRef } from "react";
-import { motion, useScroll, useTransform, useReducedMotion, type MotionValue } from "framer-motion";
+import { useReducedMotion } from "framer-motion";
+import gsap from "gsap";
+import { useGSAP } from "@gsap/react";
+import { ScrollTrigger } from "gsap/ScrollTrigger";
 import { ShieldCheck } from "lucide-react";
 import AssetMark from "./AssetMark";
 import { DEMO_HOLDINGS, DEMO_TOTALS, DEMO_SERIES } from "./demoData";
 
+gsap.registerPlugin(useGSAP, ScrollTrigger);
+
 /**
- * Scroll-driven fanned card stack.
+ * Scroll-driven fanned card stack, pinned with ScrollTrigger.
  *
- * The section is deliberately tall (180vh) with a sticky inner panel: scroll
- * progress through that extra height drives which card sits at the front,
- * so the fan advances as the reader scrolls rather than on a timer.
+ * This was a hand-rolled pin: a section with an explicit 180vh height and a
+ * position:sticky inner panel, with framer's useScroll mapping progress onto
+ * the fan. It worked, but the height was a magic number tuned by eye -- change
+ * the card content or add a fourth card and the fan finished early or late,
+ * with no error to tell you.
+ *
+ * ScrollTrigger derives the scroll distance from the choreography instead
+ * (85% of a viewport per card transition) and builds the pin spacer itself, so
+ * the section is exactly as tall as the animation needs.
  *
  * Under prefers-reduced-motion the whole mechanism is dropped -- the section
  * collapses to its natural height and the three cards render as a plain static
- * row. MotionConfig alone would not cover this: it suppresses *animations*,
- * but a motion value bound to scroll position keeps tracking regardless, and
- * the 180vh of scroll distance would remain as unexplained empty page.
+ * row. Neither MotionConfig nor the CSS reduced-motion block would cover this:
+ * both suppress *animations*, while a scroll-bound pin keeps consuming scroll
+ * distance regardless, leaving a screen of unexplained empty page.
  */
 
 const CARDS = [
@@ -156,49 +167,68 @@ function CardBody({ c }: { c: (typeof CARDS)[number] }) {
   );
 }
 
-function FanCard({
-  index,
-  cardIndex,
-  c,
-}: {
-  index: number;
-  cardIndex: MotionValue<number>;
-  c: (typeof CARDS)[number];
-}) {
-  const offset = useTransform(cardIndex, v => index - v);
-  const rotate = useTransform(offset, v => v * 7);
-  const x = useTransform(offset, v => v * 64);
-  const y = useTransform(offset, v => Math.abs(v) * 14);
-  const scale = useTransform(offset, v => 1 - Math.min(Math.abs(v), 1) * 0.07);
-  const opacity = useTransform(offset, v => (Math.abs(v) > 1.4 ? 0 : 1));
-  const zIndex = useTransform(offset, v => Math.round(10 - Math.abs(v)));
-
-  return (
-    <motion.div className="vx-fan-card" style={{ x, y, rotate, scale, opacity, zIndex }}>
-      <CardBody c={c} />
-    </motion.div>
-  );
-}
-
 export default function CardStack() {
-  const containerRef = useRef<HTMLElement>(null);
+  const sectionRef = useRef<HTMLElement>(null);
+  const pinRef = useRef<HTMLDivElement>(null);
+  const cardsRef = useRef<(HTMLDivElement | null)[]>([]);
   const reduced = useReducedMotion();
 
-  const { scrollYProgress } = useScroll({
-    target: containerRef,
-    offset: ["start start", "end end"],
-  });
-  const cardIndex = useTransform(scrollYProgress, [0, 1], [0, CARDS.length - 1]);
+  useGSAP(
+    () => {
+      if (reduced || !sectionRef.current || !pinRef.current) return;
+
+      const cards = cardsRef.current.filter(Boolean) as HTMLDivElement[];
+
+      /** Fan geometry for a given fractional card index. */
+      const layout = (v: number) => {
+        cards.forEach((el, i) => {
+          const offset = i - v;
+          const away = Math.abs(offset);
+          gsap.set(el, {
+            x: offset * 64,
+            y: away * 14,
+            rotate: offset * 7,
+            scale: 1 - Math.min(away, 1) * 0.07,
+            opacity: away > 1.4 ? 0 : 1,
+            zIndex: Math.round(10 - away),
+          });
+        });
+      };
+
+      layout(0);
+
+      const state = { i: 0 };
+      gsap.to(state, {
+        i: CARDS.length - 1,
+        ease: "none",
+        onUpdate: () => layout(state.i),
+        scrollTrigger: {
+          trigger: sectionRef.current,
+          start: "top top",
+          // Scroll distance is expressed per card rather than as a fixed
+          // section height. The old version was a hand-tuned 180vh, which
+          // meant adding a fourth card silently made the fan finish early.
+          end: `+=${(CARDS.length - 1) * 85}%`,
+          pin: pinRef.current,
+          pinSpacing: true,
+          scrub: 0.6,
+          anticipatePin: 1,
+          invalidateOnRefresh: true,
+        },
+      });
+    },
+    { dependencies: [reduced], scope: sectionRef },
+  );
 
   const heading = (
     <div className="relative mx-auto mb-2 max-w-[640px] text-center">
       <h2
-        className="font-heading m-0 pb-1 text-[clamp(28px,4vw,38px)] leading-[1.3] font-bold tracking-[-0.03em]"
-        style={{ color: "#F8FAFC" }}
+        className="font-heading m-0 pb-1 text-[clamp(28px,4vw,38px)] leading-[1.3] font-bold"
+        style={{ color: "var(--vx-ink)" }}
       >
         One view. Every angle.
       </h2>
-      <p className="mt-2.5 mb-0 text-base" style={{ color: "#94A3B8" }}>
+      <p className="mt-2.5 mb-0 text-base" style={{ color: "var(--vx-ink-dim)" }}>
         {reduced
           ? "Three things VaultX does that a balance tracker doesn't."
           : "Keep scrolling — the stack follows."}
@@ -223,13 +253,24 @@ export default function CardStack() {
   }
 
   return (
-    <section ref={containerRef} className="relative" style={{ height: "180vh" }}>
-      <div className="sticky top-0 flex h-screen flex-col justify-center overflow-hidden px-6 py-10 md:px-10">
+    <section ref={sectionRef} className="relative">
+      <div
+        ref={pinRef}
+        className="flex h-screen flex-col justify-center overflow-hidden px-6 py-10 md:px-10"
+      >
         <div className="vx-grid-bg" aria-hidden />
         {heading}
         <div className="vx-fan-wrap">
           {CARDS.map((c, i) => (
-            <FanCard key={c.key} index={i} cardIndex={cardIndex} c={c} />
+            <div
+              key={c.key}
+              ref={el => {
+                cardsRef.current[i] = el;
+              }}
+              className="vx-fan-card"
+            >
+              <CardBody c={c} />
+            </div>
           ))}
         </div>
       </div>
