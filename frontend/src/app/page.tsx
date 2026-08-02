@@ -3,106 +3,42 @@
 import { useEffect, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { motion, useReducedMotion } from "framer-motion";
-import {
-  BarChart3,
-  Brain,
-  LineChart,
-  Lock,
-  PieChart,
-  Repeat,
-  ShieldCheck,
-  Sparkles,
-  ArrowRight,
-  Check,
-} from "lucide-react";
+import { motion, MotionConfig } from "framer-motion";
+import { ArrowRight, Lock, Play, Wallet } from "lucide-react";
 import { useAuth } from "@/providers/AuthProvider";
 import { api } from "@/lib/api";
-import Button from "@/components/ui/Button";
-import { Card } from "@/components/ui/Card";
-import Badge from "@/components/ui/Badge";
-import ThemeToggle from "@/components/ui/ThemeToggle";
-import HeroVisual from "@/components/landing/HeroVisual";
-import MarketPulseBackground from "@/components/landing/MarketPulseBackground";
-import Logo from "@/components/landing/Logo";
-import ProductPreview from "@/components/landing/ProductPreview";
-import AssetMarquee from "@/components/landing/AssetMarquee";
+import LandingNav from "@/components/landing/LandingNav";
+import HeroPreviewCard from "@/components/landing/HeroPreviewCard";
+import CardStack from "@/components/landing/CardStack";
+import ProductWindow from "@/components/landing/ProductWindow";
+import FeatureGrid from "@/components/landing/FeatureGrid";
+import SecurityPanel from "@/components/landing/SecurityPanel";
 import FaqAccordion from "@/components/landing/FaqAccordion";
+import Wordmark from "@/components/landing/Wordmark";
 
 /**
  * Marketing landing page.
  *
- * This route previously held a login/signup form with hardcoded statistics and
- * alert()-based validation, duplicating the dedicated /login and /signup pages.
- * The auth flows live there; this page only routes people towards them.
+ * The auth flows live at /login and /signup; this page only routes people
+ * towards them, or into the read-only demo.
  *
- * Motion is confined to this file, the hero scene and the marquee. Everything
- * behind the auth wall stays static.
+ * Two standing constraints this page is built around:
  *
- * Note on claims: there is no "trusted by N users" or "$N tracked" band here.
- * Those numbers would have to be invented, and a product whose entire pitch is
- * that its figures trace back to real trades cannot open with a fabricated one.
- * The capability strip below states things that are true of the build instead.
+ *  - **Motion is confined here.** Ambient background motion, the tilted
+ *    preview card, the scrolling ticker and the rotating asset wheel all live
+ *    on this route. Everything behind the auth wall stays calm and instant.
+ *
+ *  - **No fabricated figures.** There is no "trusted by N users" or "$N
+ *    tracked" band, and the numbers in both product previews are the public
+ *    demo account's real ones, labelled as such. A product whose entire pitch
+ *    is that its figures trace back to real trades cannot open with an
+ *    invented one -- including the unflattering ones, which are shown in red
+ *    rather than quietly swapped for green.
+ *
+ * Unlike the rest of the app this route commits to a single dark treatment
+ * rather than following the theme, which is why its colours are literal here
+ * and in the .vx-* block in globals.css.
  */
-
-const CAPABILITIES = [
-  { value: "Non-custodial", label: "Withdrawal-capable keys refused" },
-  { value: "Real-time", label: "Exchange WebSocket into TimescaleDB" },
-  { value: "90 days", label: "Daily returns behind the optimizer" },
-  { value: "No card", label: "Demo opens without signup" },
-];
-
-const FEATURES = [
-  {
-    icon: PieChart,
-    title: "Your portfolio, computed",
-    body: "Connect Binance or add holdings by hand. Cost basis, realised and unrealised P&L and allocation are derived from your actual trades — never estimated.",
-    points: ["FIFO cost basis", "Per-asset P&L", "Live allocation"],
-    wide: true,
-  },
-  {
-    icon: LineChart,
-    title: "Prices that are actually live",
-    body: "A Binance WebSocket feed streams through Redis into a TimescaleDB hypertable, so your history is real market data rather than a polled snapshot.",
-    points: [],
-    wide: false,
-  },
-  {
-    icon: Brain,
-    title: "Ask about what you hold",
-    body: "The advisor answers from your holdings, trades and risk metrics, retrieved at question time — so it cannot invent a position you do not own.",
-    points: [],
-    wide: false,
-  },
-  {
-    icon: ShieldCheck,
-    title: "Isolated by construction",
-    body: "Every database query filters on the authenticated user id, so another account's rows are unreachable rather than merely hidden from the interface.",
-    points: [],
-    wide: true,
-  },
-];
-
-const DIFFERENTIATORS = [
-  {
-    icon: BarChart3,
-    label: "Optimiser",
-    title: "Modern Portfolio Theory, on your holdings",
-    body: "Maximum-Sharpe weights solved from 90 days of real daily returns, shown beside your current allocation — the gap between the two is the finding.",
-  },
-  {
-    icon: Repeat,
-    label: "Backtest",
-    title: "Test a DCA plan before committing",
-    body: "Simulate daily, weekly, biweekly or monthly contributions against real history, and against a lump-sum baseline that is reported even when it wins.",
-  },
-  {
-    icon: Lock,
-    label: "Custody",
-    title: "Read-only keys, encrypted at rest",
-    body: "API keys are encrypted with Fernet before storage, and any key carrying withdrawal permission is refused outright at connection time.",
-  },
-];
 
 const FAQ = [
   {
@@ -127,11 +63,35 @@ const FAQ = [
   },
 ];
 
-function Section({ children, className = "" }: { children: React.ReactNode; className?: string }) {
+/**
+ * Section entrance.
+ *
+ * Replaces the IntersectionObserver-based Reveal component this page used to
+ * import. The page was running two reveal mechanisms side by side -- that one
+ * for section headings, framer's whileInView for the cards and chips -- which
+ * meant two sets of thresholds and two reduced-motion stories for one visual
+ * effect. This is the framer one, so everything on the page now reveals
+ * through the same path and collapses under the same MotionConfig.
+ */
+function Rise({
+  children,
+  className,
+  delay = 0,
+}: {
+  children: React.ReactNode;
+  className?: string;
+  delay?: number;
+}) {
   return (
-    <section className={`mx-auto w-full max-w-6xl px-6 py-20 md:py-28 ${className}`}>
+    <motion.div
+      initial={{ opacity: 0, y: 24 }}
+      whileInView={{ opacity: 1, y: 0 }}
+      viewport={{ once: true, amount: 0.25 }}
+      transition={{ duration: 0.55, delay: delay / 1000 }}
+      className={className}
+    >
       {children}
-    </section>
+    </motion.div>
   );
 }
 
@@ -140,22 +100,6 @@ export default function LandingPage() {
   const { isAuthenticated, isLoading } = useAuth();
   const [demoLoading, setDemoLoading] = useState(false);
   const [demoError, setDemoError] = useState<string | null>(null);
-
-  // Read once, at the top level. A reveal helper that called this itself could
-  // not be used inside .map() without breaking the rules of hooks.
-  const reduced = useReducedMotion();
-
-  /** Scroll-reveal props, or nothing at all when reduced motion is requested —
-   *  in which case the content is simply present rather than fading in. */
-  const reveal = (delay = 0) =>
-    reduced
-      ? {}
-      : {
-          initial: { opacity: 0, y: 16 },
-          whileInView: { opacity: 1, y: 0 },
-          viewport: { once: true, margin: "-80px" },
-          transition: { duration: 0.5, delay, ease: "easeOut" as const },
-        };
 
   // Someone already signed in has no use for a marketing page.
   useEffect(() => {
@@ -180,275 +124,257 @@ export default function LandingPage() {
   };
 
   return (
-    <div className="bg-background text-foreground min-h-screen">
-      {/* ── Nav ─────────────────────────────────────────────────────────── */}
-      <header className="bg-background/70 border-border sticky top-0 z-50 border-b backdrop-blur-xl">
-        <nav className="mx-auto flex max-w-6xl items-center justify-between px-6 py-4">
-          <div className="flex items-center gap-3">
-            <Logo />
-            <span className="font-heading text-lg font-bold tracking-tight">VaultX</span>
-          </div>
-          <div className="flex items-center gap-2">
-            <ThemeToggle />
-            <Link href="/login">
-              <Button variant="ghost" size="sm">
-                Sign in
-              </Button>
-            </Link>
-            <Link href="/signup">
-              <Button size="sm">Get started</Button>
-            </Link>
-          </div>
-        </nav>
-      </header>
+    /* MotionConfig: the CSS animations here have their own reduced-motion
+       block in globals.css, but framer-motion drives its own animations via
+       rAF and ignores that media query entirely. This makes every whileHover /
+       whileInView below collapse for a visitor who asked for reduced motion.
+       (The scroll-driven card fan needs more than this -- see CardStack.)
 
-      {/* ── Hero ────────────────────────────────────────────────────────── */}
-      <div className="relative overflow-hidden">
-        <MarketPulseBackground />
-        <HeroVisual />
+       `dark` is deliberate, not a leftover: this route commits to one dark
+       treatment, but token-consuming children (the FAQ accordion, the logo)
+       would otherwise resolve light-theme tokens for a visitor whose theme is
+       light -- white cards on a near-black page. Scoping the subtree to .dark
+       redefines those custom properties for everything inside. */
+    <MotionConfig reducedMotion="user">
+      <div className="vx-landing dark min-h-screen" style={{ color: "#E2E8F0" }}>
+        <LandingNav />
 
-        {/* Radial wash behind the headline, so the 3D scene reads as depth
-            rather than as an object sitting on a flat panel.
-
-            Inline style, not an arbitrary Tailwind value: the slash in
-            hsl(var(--primary)/0.14) is parsed as an opacity modifier, so the
-            utility is dropped and the glow silently never renders. */}
-        <div
-          aria-hidden
-          className="pointer-events-none absolute inset-x-0 top-0 -z-10 h-[42rem]"
-          style={{
-            background:
-              "radial-gradient(ellipse 60% 50% at 50% 0%, hsl(var(--primary) / 0.16), transparent 70%)",
-          }}
-        />
-
-        <div className="relative mx-auto w-full max-w-6xl px-6 pt-20 pb-12 md:pt-28">
-          <motion.div {...reveal()} className="flex flex-col items-center text-center">
-            <Badge variant="outline" className="mb-6">
-              <Sparkles className="mr-1.5 h-3 w-3" />
-              Portfolio analytics, not just tracking
-            </Badge>
-
-            <h1 className="font-heading mx-auto max-w-4xl text-5xl leading-[1.05] font-bold tracking-tighter text-balance md:text-7xl">
-              Know what your crypto is{" "}
-              <span className="from-primary via-vaultx-secondary to-vaultx-accent bg-gradient-to-r bg-clip-text text-transparent">
-                actually doing
+        {/* ── Hero ────────────────────────────────────────────────────────── */}
+        {/* Centred container: the hero block sits in the middle of the window
+            with even gutters either side, matching the nav above it and every
+            section below. Copy stays left-aligned inside its column -- a
+            centred ragged edge beside a left-edged product card would leave
+            neither one anchored to anything. */}
+        <section className="relative overflow-hidden px-6 pt-[140px] pb-16 md:px-10">
+          <div className="vx-grid-bg" aria-hidden />
+          <div
+            className="vx-hero-grid relative mx-auto grid max-w-[1240px] items-center gap-16"
+            style={{ gridTemplateColumns: "1fr 1fr" }}
+          >
+            <div className="flex flex-col items-start gap-6">
+              <span className="vx-badge-glow">
+                <span className="vx-pulse-dot">
+                  <span className="vx-pulse-dot-core" />
+                </span>
+                Non-custodial · read-only keys
               </span>
-            </h1>
 
-            <p className="text-muted-foreground mx-auto mt-7 max-w-xl text-lg text-pretty md:text-xl">
-              Most trackers stop at totals. VaultX computes cost basis from your real trades,
-              optimises your allocation, backtests strategies, and answers questions about the
-              portfolio you actually hold.
-            </p>
-
-            <div className="mt-10 flex w-full flex-col items-center justify-center gap-3 sm:w-auto sm:flex-row">
-              <Link href="/signup" className="w-full sm:w-auto">
-                <Button size="lg" className="w-full sm:w-auto">
-                  Get started free
-                  <ArrowRight className="h-4 w-4" />
-                </Button>
-              </Link>
-              <Button
-                variant="outline"
-                size="lg"
-                onClick={startDemo}
-                loading={demoLoading}
-                className="w-full sm:w-auto"
+              <h1
+                className="vx-hero-serif font-heading m-0 text-[clamp(42px,5.2vw,68px)] leading-[1.08] font-bold"
+                style={{ fontStyle: "normal" }}
               >
-                {demoLoading ? "Opening demo…" : "Explore the live demo"}
-              </Button>
+                <span className="block text-white">Analyze your crypto.</span>
+                <span className="vx-headline-gradient block">Don&apos;t just watch it.</span>
+              </h1>
+
+              <p
+                className="vx-hero-serif m-0 max-w-[560px] text-[19px] leading-[1.6]"
+                style={{ color: "#94A3B8" }}
+              >
+                True cost basis from your real trade history, Modern Portfolio Theory allocation
+                targets, and DCA backtesting against real prices — not another balance aggregator.
+              </p>
+
+              <div className="flex flex-wrap gap-3">
+                <Link href="/signup">
+                  <button className="vx-cta-primary">
+                    <Wallet className="h-4 w-4" />
+                    Get started free
+                    <ArrowRight className="vx-cta-arrow h-4 w-4" />
+                  </button>
+                </Link>
+                <button
+                  type="button"
+                  className="vx-cta-secondary"
+                  onClick={startDemo}
+                  disabled={demoLoading}
+                >
+                  <Play className="h-4 w-4" />
+                  {demoLoading ? "Opening demo…" : "See it work"}
+                </button>
+              </div>
+
+              <span
+                className="inline-flex items-center gap-1.5 text-xs"
+                style={{ color: "#64748B" }}
+              >
+                <Lock className="h-3 w-3" />
+                Read-only. VaultX never moves your funds.
+              </span>
+
+              {demoError && (
+                <p className="m-0 text-sm" style={{ color: "#F87171" }} role="alert">
+                  {demoError}
+                </p>
+              )}
             </div>
 
-            <p className="text-muted-foreground mt-4 text-xs">
-              The demo is read-only. No signup, no card, no exchange keys.
-            </p>
-            {demoError && (
-              <p className="text-vaultx-danger mt-3 text-sm" role="alert">
-                {demoError}
-              </p>
-            )}
-          </motion.div>
-
-          {/* Framed product surface -- the centrepiece. */}
-          <motion.div {...reveal(0.12)} className="mt-16 md:mt-20">
-            <ProductPreview />
-          </motion.div>
-        </div>
-      </div>
-
-      {/* ── Asset strip ─────────────────────────────────────────────────── */}
-      <div className="border-border border-y py-6">
-        <p className="text-muted-foreground mb-5 text-center text-xs font-medium tracking-wider uppercase">
-          Tracking major assets across Binance
-        </p>
-        <AssetMarquee />
-      </div>
-
-      {/* ── Capability strip ────────────────────────────────────────────── */}
-      <Section className="!py-14">
-        <div className="grid grid-cols-2 gap-6 md:grid-cols-4">
-          {CAPABILITIES.map((item, i) => (
-            <motion.div key={item.value} {...reveal(i * 0.06)} className="text-center">
-              <div className="font-heading text-foreground text-2xl font-bold tracking-tight md:text-3xl">
-                {item.value}
-              </div>
-              <div className="text-muted-foreground mt-1.5 text-xs leading-relaxed text-balance">
-                {item.label}
-              </div>
-            </motion.div>
-          ))}
-        </div>
-      </Section>
-
-      {/* ── Features (bento) ────────────────────────────────────────────── */}
-      <Section className="!pt-6">
-        <motion.h2
-          {...reveal()}
-          className="font-heading mb-4 text-center text-3xl font-bold tracking-tighter text-balance md:text-5xl"
-        >
-          Built on your real data
-        </motion.h2>
-        <motion.p
-          {...reveal(0.05)}
-          className="text-muted-foreground mx-auto mb-14 max-w-2xl text-center text-lg text-pretty"
-        >
-          Every figure traces back to a trade you made or a price that was recorded.
-        </motion.p>
-
-        <div className="grid gap-4 md:grid-cols-3">
-          {FEATURES.map((feature, i) => (
-            <motion.div
-              key={feature.title}
-              {...reveal(i * 0.07)}
-              className={feature.wide ? "md:col-span-2" : ""}
-            >
-              <Card interactive className="h-full p-7">
-                <div className="bg-accent text-accent-foreground mb-5 flex h-11 w-11 items-center justify-center rounded-lg">
-                  <feature.icon className="h-5 w-5" />
-                </div>
-                <h3 className="font-heading mb-2.5 text-xl font-semibold tracking-tight">
-                  {feature.title}
-                </h3>
-                <p className="text-muted-foreground text-sm leading-relaxed">{feature.body}</p>
-                {feature.points.length > 0 && (
-                  <ul className="mt-5 flex flex-wrap gap-x-5 gap-y-2">
-                    {feature.points.map(point => (
-                      <li
-                        key={point}
-                        className="text-muted-foreground flex items-center gap-1.5 text-xs"
-                      >
-                        <Check className="text-vaultx-success h-3.5 w-3.5" />
-                        {point}
-                      </li>
-                    ))}
-                  </ul>
-                )}
-              </Card>
-            </motion.div>
-          ))}
-        </div>
-      </Section>
-
-      {/* ── Differentiators ─────────────────────────────────────────────── */}
-      <div className="border-border bg-card/40 border-y">
-        <Section>
-          <motion.h2
-            {...reveal()}
-            className="font-heading mb-4 max-w-2xl text-3xl font-bold tracking-tighter text-balance md:text-5xl"
-          >
-            The analysis other trackers do not do
-          </motion.h2>
-          <motion.p
-            {...reveal(0.05)}
-            className="text-muted-foreground mb-14 max-w-2xl text-lg text-pretty"
-          >
-            Aggregators compete on how many wallets they can connect. None of them tell you
-            whether your allocation is any good.
-          </motion.p>
-
-          <div className="grid gap-4 md:grid-cols-3">
-            {DIFFERENTIATORS.map((item, i) => (
-              <motion.div key={item.title} {...reveal(i * 0.07)}>
-                <Card interactive className="h-full p-7">
-                  <div className="mb-5 flex items-center gap-2">
-                    <div className="bg-primary/10 text-primary flex h-8 w-8 items-center justify-center rounded-md">
-                      <item.icon className="h-4 w-4" />
-                    </div>
-                    <span className="text-muted-foreground text-[11px] font-medium tracking-wider uppercase">
-                      {item.label}
-                    </span>
-                  </div>
-                  <h3 className="font-heading mb-2.5 text-lg font-semibold text-balance">
-                    {item.title}
-                  </h3>
-                  <p className="text-muted-foreground text-sm leading-relaxed">{item.body}</p>
-                </Card>
-              </motion.div>
-            ))}
+            <HeroPreviewCard />
           </div>
-        </Section>
-      </div>
+        </section>
 
-      {/* ── FAQ ─────────────────────────────────────────────────────────── */}
-      <Section>
-        <motion.h2
-          {...reveal()}
-          className="font-heading mb-12 text-center text-3xl font-bold tracking-tighter md:text-5xl"
-        >
-          Questions
-        </motion.h2>
-        <motion.div {...reveal(0.05)}>
-          <FaqAccordion items={FAQ} />
-        </motion.div>
-      </Section>
+        {/* ── Scroll-driven card fan ──────────────────────────────────────── */}
+        <CardStack />
 
-      {/* ── Closing CTA ─────────────────────────────────────────────────── */}
-      <div className="border-border border-t">
-        <Section className="relative overflow-hidden text-center">
+        {/* ── Product window ──────────────────────────────────────────────── */}
+        <section id="product" className="relative overflow-hidden px-6 pt-12 pb-24 md:px-10">
+          <div className="vx-grid-bg" aria-hidden />
           <div
+            className="vx-orb vx-orb-drift-a"
             aria-hidden
-            className="pointer-events-none absolute inset-0 -z-10"
             style={{
-              background:
-                "radial-gradient(ellipse 50% 60% at 50% 100%, hsl(var(--primary) / 0.16), transparent 70%)",
+              top: "10%",
+              left: "8%",
+              width: 500,
+              height: 500,
+              background: "rgba(79,70,229,0.25)",
+              filter: "blur(120px)",
             }}
           />
-          <motion.div {...reveal()}>
-            <h2 className="font-heading mx-auto max-w-2xl text-3xl font-bold tracking-tighter text-balance md:text-5xl">
+          <div
+            className="vx-orb vx-orb-drift-b"
+            aria-hidden
+            style={{
+              top: "5%",
+              right: "8%",
+              width: 450,
+              height: 450,
+              background: "rgba(8,145,178,0.2)",
+              filter: "blur(140px)",
+            }}
+          />
+
+          <div className="relative mx-auto mb-10 max-w-[760px] text-center">
+            <h2 className="vx-preview-headline font-heading m-0 pb-1 text-[clamp(30px,4.5vw,44px)] leading-[1.3] font-bold tracking-[-0.03em]">
+              See what your portfolio is actually doing
+            </h2>
+          </div>
+
+          <div className="relative">
+            <ProductWindow onLaunchDemo={startDemo} loading={demoLoading} />
+          </div>
+        </section>
+
+        {/* ── Features ────────────────────────────────────────────────────── */}
+        {/* Deliberately plain: no grid, no orbs. Every section used to carry
+            the same violet/cyan orb pair over the same grid, so the ambient
+            treatment stopped signalling anything. It is now reserved for the
+            hero, the card fan and the product window; the reading sections
+            between them sit on flat background, which is what lets those
+            three read as the emphasis they were meant to be. */}
+        <section id="analysis" className="relative overflow-hidden px-6 py-16 md:px-10">
+          <div className="relative mx-auto max-w-[1040px]">
+            <Rise className="mb-12 text-center">
+              <h2 className="vx-headline-gradient font-heading m-0 mb-3 inline-block text-[clamp(36px,5vw,48px)] font-bold tracking-[-0.03em]">
+                Depth, not breadth
+              </h2>
+              <p
+                className="mx-auto m-0 max-w-[560px] text-[17px] leading-relaxed"
+                style={{ color: "#94A3B8" }}
+              >
+                Other trackers count your wallets. VaultX understands them.
+              </p>
+            </Rise>
+            {/* No Reveal wrapper: each card runs its own staggered whileInView
+              entrance, and fading the grid in as one block first would delay
+              and flatten that stagger. */}
+            <FeatureGrid />
+          </div>
+        </section>
+
+        {/* ── Security ────────────────────────────────────────────────────── */}
+        <section id="security" className="relative overflow-hidden px-6 pt-12 pb-16 md:px-10">
+          <SecurityPanel />
+        </section>
+
+        {/* ── FAQ ─────────────────────────────────────────────────────────── */}
+        <section className="relative overflow-hidden px-6 py-16 md:px-10">
+          <div className="relative mx-auto max-w-[800px]">
+            <Rise>
+              <h2
+                className="font-heading m-0 mb-10 text-center text-[clamp(30px,4vw,40px)] font-bold tracking-[-0.03em]"
+                style={{ color: "#F8FAFC" }}
+              >
+                Questions
+              </h2>
+            </Rise>
+            <Rise delay={60}>
+              <FaqAccordion items={FAQ} />
+            </Rise>
+          </div>
+        </section>
+
+        {/* ── Closing CTA ─────────────────────────────────────────────────── */}
+        <section className="relative overflow-hidden px-6 py-20 text-center md:px-10">
+          <div
+            aria-hidden
+            className="pointer-events-none absolute inset-0 z-0"
+            style={{
+              background:
+                "radial-gradient(ellipse 50% 60% at 50% 100%, rgba(99,102,241,0.18), transparent 70%)",
+            }}
+          />
+          <Rise className="relative z-[1]">
+            <h2
+              className="font-heading mx-auto m-0 max-w-[640px] text-[clamp(30px,4vw,44px)] font-bold tracking-[-0.03em]"
+              style={{ color: "#F8FAFC" }}
+            >
               See it running before you sign up
             </h2>
-            <p className="text-muted-foreground mx-auto mt-5 max-w-xl text-lg text-pretty">
+            <p
+              className="mx-auto mt-5 max-w-[520px] text-lg leading-relaxed"
+              style={{ color: "#94A3B8" }}
+            >
               The demo is a seeded account with real price history — the same analytics you would
               get on your own portfolio.
             </p>
-            <div className="mt-9 flex flex-col items-center justify-center gap-3 sm:flex-row">
-              <Button size="lg" onClick={startDemo} loading={demoLoading}>
+            <div className="mt-9 flex flex-wrap items-center justify-center gap-3">
+              <button
+                type="button"
+                className="vx-cta-primary"
+                onClick={startDemo}
+                disabled={demoLoading}
+              >
                 {demoLoading ? "Opening demo…" : "Explore the live demo"}
-                <ArrowRight className="h-4 w-4" />
-              </Button>
-              <Link href="/signup" className="w-full sm:w-auto">
-                <Button variant="outline" size="lg" className="w-full sm:w-auto">
-                  Create an account
-                </Button>
+                <ArrowRight className="vx-cta-arrow h-4 w-4" />
+              </button>
+              <Link href="/signup">
+                <button className="vx-cta-secondary">Create an account</button>
               </Link>
             </div>
-          </motion.div>
-        </Section>
-      </div>
+          </Rise>
+        </section>
 
-      {/* ── Footer ──────────────────────────────────────────────────────── */}
-      <footer className="border-border border-t">
-        <div className="text-muted-foreground mx-auto flex max-w-6xl flex-col items-center justify-between gap-4 px-6 py-8 text-sm sm:flex-row">
-          <div className="flex items-center gap-2">
-            <BarChart3 className="h-4 w-4" />
-            <span>© {new Date().getFullYear()} VaultX</span>
-          </div>
-          <p className="text-xs">
-            Analytics and backtests are historical, not predictions or financial advice.
+        {/* ── Footer ──────────────────────────────────────────────────────── */}
+        <footer
+          className="relative flex flex-wrap items-center gap-6 px-6 py-10 text-[13px] md:px-10"
+          style={{
+            borderTop: "1px solid rgba(255,255,255,0.08)",
+            color: "#94A3B8",
+          }}
+        >
+          {/* The footer is the one surface with room for the full lockup, so it
+              carries the tagline the nav has no vertical space for. */}
+          <Wordmark size="sm" tagline />
+
+          <span>Non-custodial crypto portfolio analytics.</span>
+          <span className="ml-auto flex items-center gap-[18px]">
+            <a href="#product" className="vx-footer-link">
+              Product
+            </a>
+            <a href="#security" className="vx-footer-link">
+              Security
+            </a>
+            <Link href="/login" className="vx-footer-link">
+              Sign in
+            </Link>
+          </span>
+          <p className="w-full text-xs" style={{ color: "#64748B" }}>
+            © {new Date().getFullYear()} VaultX. Analytics and backtests are historical, not
+            predictions or financial advice.
           </p>
-        </div>
-      </footer>
-    </div>
+        </footer>
+      </div>
+    </MotionConfig>
   );
 }
