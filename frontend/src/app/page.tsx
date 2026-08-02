@@ -8,6 +8,8 @@ import { ArrowRight, Lock, Play, Wallet } from "lucide-react";
 import { useAuth } from "@/providers/AuthProvider";
 import { api } from "@/lib/api";
 import LandingNav from "@/components/landing/LandingNav";
+import ScrollRail, { type RailSection } from "@/components/landing/ScrollRail";
+import SplitHeadline from "@/components/landing/SplitHeadline";
 import HeroPreviewCard from "@/components/landing/HeroPreviewCard";
 import CardStack from "@/components/landing/CardStack";
 import ProductWindow from "@/components/landing/ProductWindow";
@@ -39,6 +41,24 @@ import Wordmark from "@/components/landing/Wordmark";
  * rather than following the theme, which is why its colours are literal here
  * and in the .vx-* block in globals.css.
  */
+
+const RAIL: RailSection[] = [
+  { id: "hero", label: "Overview" },
+  { id: "product", label: "Product" },
+  { id: "analysis", label: "Capability" },
+  { id: "security", label: "Security" },
+  { id: "faq", label: "Questions" },
+];
+
+/** Mono index + label + hairline rule. The section's top edge. */
+function Eyebrow({ num, children }: { num: string; children: React.ReactNode }) {
+  return (
+    <div className="vx-eyebrow">
+      <span className="vx-eyebrow-num">{num}</span>
+      {children}
+    </div>
+  );
+}
 
 const FAQ = [
   {
@@ -138,20 +158,17 @@ export default function LandingPage() {
     <MotionConfig reducedMotion="user">
       <div className="vx-landing dark min-h-screen" style={{ color: "#E2E8F0" }}>
         <LandingNav />
+        <ScrollRail sections={RAIL} />
 
         {/* ── Hero ────────────────────────────────────────────────────────── */}
-        {/* Centred container: the hero block sits in the middle of the window
-            with even gutters either side, matching the nav above it and every
-            section below. Copy stays left-aligned inside its column -- a
-            centred ragged edge beside a left-edged product card would leave
-            neither one anchored to anything. */}
-        <section className="relative overflow-hidden px-6 pt-[140px] pb-16 md:px-10">
+        {/* Twelve columns rather than two equal halves. The copy takes 1-6 and
+            the card 8-12, so the two blocks sit at different weights with a
+            column of air between them. An even 1fr 1fr split is the most
+            common hero layout there is, and it reads as a template. */}
+        <section id="hero" className="vx-section pt-[150px]">
           <div className="vx-grid-bg" aria-hidden />
-          <div
-            className="vx-hero-grid relative mx-auto grid max-w-[1240px] items-center gap-16"
-            style={{ gridTemplateColumns: "1fr 1fr" }}
-          >
-            <div className="flex flex-col items-start gap-6">
+          <div className="vx-container grid grid-cols-1 items-center gap-14 lg:grid-cols-12 lg:gap-10">
+            <div className="flex flex-col items-start gap-6 lg:col-span-6">
               <span className="vx-badge-glow">
                 <span className="vx-pulse-dot">
                   <span className="vx-pulse-dot-core" />
@@ -159,17 +176,26 @@ export default function LandingPage() {
                 Non-custodial · read-only keys
               </span>
 
-              <h1
+              {/* The second line was a three-stop violet/blue/cyan gradient.
+                  Every landing page in this category has one, and against the
+                  serif it read as decoration applied to type rather than as
+                  type. A single amber line -- the palette's one warm note --
+                  does the same emphasis with a fraction of the noise. */}
+              <SplitHeadline
                 className="vx-hero-serif font-heading m-0 text-[clamp(42px,5.2vw,68px)] leading-[1.08] font-bold"
-                style={{ fontStyle: "normal" }}
+                delay={0.15}
               >
-                <span className="block text-white">Analyze your crypto.</span>
-                <span className="vx-headline-gradient block">Don&apos;t just watch it.</span>
-              </h1>
+                <span className="block" style={{ color: "#FFFFFF" }}>
+                  Analyze your crypto.
+                </span>
+                <span className="block" style={{ color: "var(--vx-accent)" }}>
+                  Don&apos;t just watch it.
+                </span>
+              </SplitHeadline>
 
               <p
                 className="vx-hero-serif m-0 max-w-[560px] text-[19px] leading-[1.6]"
-                style={{ color: "#94A3B8" }}
+                style={{ color: "var(--vx-ink-dim)" }}
               >
                 True cost basis from your real trade history, Modern Portfolio Theory allocation
                 targets, and DCA backtesting against real prices — not another balance aggregator.
@@ -196,7 +222,7 @@ export default function LandingPage() {
 
               <span
                 className="inline-flex items-center gap-1.5 text-xs"
-                style={{ color: "#64748B" }}
+                style={{ color: "var(--vx-ink-faint)" }}
               >
                 <Lock className="h-3 w-3" />
                 Read-only. VaultX never moves your funds.
@@ -209,7 +235,9 @@ export default function LandingPage() {
               )}
             </div>
 
-            <HeroPreviewCard />
+            <div className="lg:col-span-5 lg:col-start-8">
+              <HeroPreviewCard />
+            </div>
           </div>
         </section>
 
@@ -217,7 +245,7 @@ export default function LandingPage() {
         <CardStack />
 
         {/* ── Product window ──────────────────────────────────────────────── */}
-        <section id="product" className="relative overflow-hidden px-6 pt-12 pb-24 md:px-10">
+        <section id="product" className="vx-section">
           <div className="vx-grid-bg" aria-hidden />
           <div
             className="vx-orb vx-orb-drift-a"
@@ -244,68 +272,88 @@ export default function LandingPage() {
             }}
           />
 
-          <div className="relative mx-auto mb-10 max-w-[760px] text-center">
-            <h2 className="vx-preview-headline font-heading m-0 pb-1 text-[clamp(30px,4.5vw,44px)] leading-[1.3] font-bold tracking-[-0.03em]">
+          <div className="vx-container">
+            <Eyebrow num="01">Product</Eyebrow>
+            {/* Heading left-aligned against the rule above it rather than
+                centred. Six centred headings in a row was most of why the page
+                read as one undifferentiated column. */}
+            <h2 className="vx-preview-headline font-heading vx-reading m-0 mb-10 pb-1 text-[clamp(30px,4.5vw,44px)] leading-[1.15] font-bold">
               See what your portfolio is actually doing
             </h2>
-          </div>
-
-          <div className="relative">
             <ProductWindow onLaunchDemo={startDemo} loading={demoLoading} />
           </div>
         </section>
 
-        {/* ── Features ────────────────────────────────────────────────────── */}
-        {/* Deliberately plain: no grid, no orbs. Every section used to carry
-            the same violet/cyan orb pair over the same grid, so the ambient
-            treatment stopped signalling anything. It is now reserved for the
-            hero, the card fan and the product window; the reading sections
-            between them sit on flat background, which is what lets those
-            three read as the emphasis they were meant to be. */}
-        <section id="analysis" className="relative overflow-hidden px-6 py-16 md:px-10">
-          <div className="relative mx-auto max-w-[1040px]">
-            <Rise className="mb-12 text-center">
-              <h2 className="vx-headline-gradient font-heading m-0 mb-3 inline-block text-[clamp(36px,5vw,48px)] font-bold tracking-[-0.03em]">
-                Depth, not breadth
-              </h2>
-              <p
-                className="mx-auto m-0 max-w-[560px] text-[17px] leading-relaxed"
-                style={{ color: "#94A3B8" }}
-              >
-                Other trackers count your wallets. VaultX understands them.
-              </p>
+        {/* ── Capabilities: the light act ─────────────────────────────────── */}
+        {/* The one inverted section on the page. Everything from the nav to the
+            footer was dark, so no section carried more weight than any other;
+            flipping this one splits the scroll into two acts and gives the
+            capability list the register of a printed spec sheet rather than a
+            sixth panel of glass.
+
+            No grid and no orbs here either -- the ambient treatment is reserved
+            for the hero, the card fan and the product window, which is what
+            lets those three read as the emphasis they were meant to be. */}
+        <section id="analysis" className="vx-section vx-act-light">
+          <div className="vx-container">
+            <Rise>
+              <Eyebrow num="02">Capability</Eyebrow>
+              <div className="mb-12 grid grid-cols-1 items-end gap-6 lg:grid-cols-12">
+                <h2
+                  className="font-heading m-0 text-[clamp(36px,5vw,52px)] leading-[1.08] font-bold lg:col-span-7"
+                  style={{ color: "var(--vx-ink)" }}
+                >
+                  Depth, not breadth
+                </h2>
+                <p
+                  className="m-0 text-[17px] leading-relaxed lg:col-span-4 lg:col-start-9"
+                  style={{ color: "var(--vx-ink-dim)" }}
+                >
+                  Other trackers count your wallets. VaultX understands them.
+                </p>
+              </div>
             </Rise>
-            {/* No Reveal wrapper: each card runs its own staggered whileInView
-              entrance, and fading the grid in as one block first would delay
+            {/* No Rise wrapper on the grid: each row runs its own staggered
+              whileInView entrance, and fading the block in first would delay
               and flatten that stagger. */}
             <FeatureGrid />
           </div>
         </section>
 
         {/* ── Security ────────────────────────────────────────────────────── */}
-        <section id="security" className="relative overflow-hidden px-6 pt-12 pb-16 md:px-10">
-          <SecurityPanel />
+        <section id="security" className="vx-section">
+          <div className="vx-container">
+            <Eyebrow num="03">Security</Eyebrow>
+            <SecurityPanel />
+          </div>
         </section>
 
         {/* ── FAQ ─────────────────────────────────────────────────────────── */}
-        <section className="relative overflow-hidden px-6 py-16 md:px-10">
-          <div className="relative mx-auto max-w-[800px]">
-            <Rise>
-              <h2
-                className="font-heading m-0 mb-10 text-center text-[clamp(30px,4vw,40px)] font-bold tracking-[-0.03em]"
-                style={{ color: "#F8FAFC" }}
-              >
-                Questions
-              </h2>
-            </Rise>
-            <Rise delay={60}>
-              <FaqAccordion items={FAQ} />
-            </Rise>
+        <section id="faq" className="vx-section">
+          <div className="vx-container">
+            <Eyebrow num="04">Questions</Eyebrow>
+            <div className="grid grid-cols-1 gap-10 lg:grid-cols-12">
+              <Rise className="lg:col-span-4">
+                <h2
+                  className="font-heading m-0 text-[clamp(30px,4vw,42px)] leading-[1.1] font-bold"
+                  style={{ color: "var(--vx-ink)" }}
+                >
+                  Questions,
+                  <br />
+                  answered plainly
+                </h2>
+              </Rise>
+              {/* The accordion carries the section on its own; a centred
+                  heading above it would have been a fifth in a row. */}
+              <Rise delay={60} className="lg:col-span-7 lg:col-start-6">
+                <FaqAccordion items={FAQ} />
+              </Rise>
+            </div>
           </div>
         </section>
 
         {/* ── Closing CTA ─────────────────────────────────────────────────── */}
-        <section className="relative overflow-hidden px-6 py-20 text-center md:px-10">
+        <section className="vx-section text-center">
           <div
             aria-hidden
             className="pointer-events-none absolute inset-0 z-0"
@@ -316,14 +364,14 @@ export default function LandingPage() {
           />
           <Rise className="relative z-[1]">
             <h2
-              className="font-heading mx-auto m-0 max-w-[640px] text-[clamp(30px,4vw,44px)] font-bold tracking-[-0.03em]"
-              style={{ color: "#F8FAFC" }}
+              className="font-heading mx-auto m-0 max-w-[640px] text-[clamp(30px,4vw,44px)] leading-[1.12] font-bold"
+              style={{ color: "var(--vx-ink)" }}
             >
               See it running before you sign up
             </h2>
             <p
               className="mx-auto mt-5 max-w-[520px] text-lg leading-relaxed"
-              style={{ color: "#94A3B8" }}
+              style={{ color: "var(--vx-ink-dim)" }}
             >
               The demo is a seeded account with real price history — the same analytics you would
               get on your own portfolio.
@@ -347,10 +395,11 @@ export default function LandingPage() {
 
         {/* ── Footer ──────────────────────────────────────────────────────── */}
         <footer
-          className="relative flex flex-wrap items-center gap-6 px-6 py-10 text-[13px] md:px-10"
+          className="relative flex flex-wrap items-center gap-6 py-10 text-[13px]"
           style={{
-            borderTop: "1px solid rgba(255,255,255,0.08)",
-            color: "#94A3B8",
+            paddingInline: "var(--vx-gutter)",
+            borderTop: "1px solid var(--vx-line)",
+            color: "var(--vx-ink-dim)",
           }}
         >
           {/* The footer is the one surface with room for the full lockup, so it
@@ -369,7 +418,7 @@ export default function LandingPage() {
               Sign in
             </Link>
           </span>
-          <p className="w-full text-xs" style={{ color: "#64748B" }}>
+          <p className="w-full text-xs" style={{ color: "var(--vx-ink-faint)" }}>
             © {new Date().getFullYear()} VaultX. Analytics and backtests are historical, not
             predictions or financial advice.
           </p>
