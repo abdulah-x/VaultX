@@ -159,3 +159,795 @@
     }
   }
 }
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   Landing page (vx-*)
+
+   Marketing surface only -- none of this is reachable from an app route.
+   Colours here are literal rather than token-based on purpose: the landing
+   commits to one dark treatment (as the design does) instead of theming, so
+   the hero reads the same for every visitor. Everything behind the auth wall
+   stays fully tokenised and light/dark themeable.
+
+   The blanket reduced-motion rule above already collapses CSS durations, but
+   the explicit blocks below also switch off transforms that would otherwise
+   sit in a displaced resting state.
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+.vx-landing {
+  --vx-bg: #07080e;
+  background: var(--vx-bg);
+  font-family: var(--font-sans);
+}
+
+/* ── Ambient background ─────────────────────────────────────────────────── */
+.vx-grid-bg {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  background-image:
+    linear-gradient(rgba(255, 255, 255, 0.05) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(255, 255, 255, 0.05) 1px, transparent 1px);
+  background-size: 56px 56px;
+  -webkit-mask-image: radial-gradient(ellipse 60% 55% at 50% 30%, #000 40%, transparent 100%);
+  mask-image: radial-gradient(ellipse 60% 55% at 50% 30%, #000 40%, transparent 100%);
+  animation: vx-grid-pulse 8s ease-in-out infinite;
+}
+@keyframes vx-grid-pulse {
+  0%,
+  100% {
+    opacity: 0.5;
+  }
+  50% {
+    opacity: 1;
+  }
+}
+
+.vx-orb {
+  position: absolute;
+  border-radius: 50%;
+  pointer-events: none;
+  z-index: 0;
+}
+.vx-orb-drift-a {
+  animation: vx-orb-a 14s ease-in-out infinite;
+}
+.vx-orb-drift-b {
+  animation: vx-orb-b 18s ease-in-out infinite;
+}
+@keyframes vx-orb-a {
+  0%,
+  100% {
+    transform: translate(0, 0) scale(1);
+  }
+  50% {
+    transform: translate(40px, 30px) scale(1.15);
+  }
+}
+@keyframes vx-orb-b {
+  0%,
+  100% {
+    transform: translate(0, 0) scale(1);
+  }
+  50% {
+    transform: translate(-35px, -25px) scale(1.1);
+  }
+}
+
+/* ── Shared bits ────────────────────────────────────────────────────────── */
+.vx-pulse-dot {
+  position: relative;
+  display: inline-flex;
+  width: 8px;
+  height: 8px;
+}
+.vx-pulse-dot::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border-radius: 9999px;
+  background: #10b981;
+  opacity: 0.6;
+  animation: vx-ping 1.8s cubic-bezier(0, 0, 0.2, 1) infinite;
+}
+.vx-pulse-dot-core {
+  position: relative;
+  display: block;
+  width: 8px;
+  height: 8px;
+  border-radius: 9999px;
+  background: #10b981;
+}
+@keyframes vx-ping {
+  75%,
+  100% {
+    transform: scale(2.4);
+    opacity: 0;
+  }
+}
+
+.vx-badge-glow {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  background: rgba(255, 255, 255, 0.03);
+  border: 1px solid rgba(139, 92, 246, 0.3);
+  backdrop-filter: blur(8px);
+  border-radius: 9999px;
+  padding: 6px 16px;
+  font-size: 12px;
+  color: #c4b5fd;
+  white-space: nowrap;
+}
+
+.vx-headline-gradient {
+  background: linear-gradient(90deg, #a78bfa, #93c5fd, #22d3ee);
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+}
+
+/* ── Brand lockup ───────────────────────────────────────────────────────── */
+/* Space Grotesk here is deliberate and is the one exception to the landing's
+   Times display face below: the wordmark is a fixed brand asset, not page
+   typography, so it must not follow the page's editorial voice. Named
+   explicitly rather than via .font-heading, which the landing reassigns. */
+.vx-wordmark {
+  font-family: var(--font-space-grotesk), system-ui, sans-serif;
+  font-weight: 700;
+  letter-spacing: -0.03em;
+  color: #f8fafc;
+  display: inline-flex;
+  align-items: baseline;
+  line-height: 1;
+}
+/* Gradient is reserved for the icon and the "X". "Vault" stays solid white. */
+.vx-wordmark-x {
+  background: linear-gradient(135deg, #22d3ee, #8b5cf6);
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+}
+.vx-mark {
+  filter: drop-shadow(0 0 18px rgba(34, 211, 238, 0.35));
+}
+.vx-tagline {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  letter-spacing: 0.28em;
+  text-transform: uppercase;
+  color: #64748b;
+  margin-left: 2px;
+}
+
+/* ── Landing typography ─────────────────────────────────────────────────── */
+/* One display face for the whole landing page, and only one.
+ *
+ * The page briefly carried three -- Times in the hero, Space Grotesk on every
+ * other heading via .font-heading, and Plus Jakarta on the buttons via
+ * --font-display -- which read as unresolved rather than deliberate. The
+ * system is now two faces plus figures:
+ *
+ *   Times New Roman  every heading and the hero's lead paragraph (brand voice)
+ *   --font-sans      all UI chrome: buttons, pills, nav, body copy
+ *   --font-mono      every number, so digits stay tabular and aligned
+ *
+ * These rules are unlayered, so they beat the layered .font-heading utility
+ * and the tracking utilities set on individual headings without having to
+ * out-specify either. */
+.vx-landing .font-heading,
+.vx-hero-serif {
+  font-family: "Times New Roman", Times, serif;
+}
+
+/* Times is a narrower face than Space Grotesk and is already tightly set, so
+   the -0.03em display tracking tuned for the sans closes it up too far. One
+   rule corrects every heading on the page. */
+.vx-landing .font-heading,
+.vx-landing h1.vx-hero-serif {
+  letter-spacing: -0.01em;
+  word-spacing: 0.02em;
+}
+
+/* The tilt itself stays in .vx-card-tilt; this element only carries the
+   colour/depth response, so the two never fight over `transform`. */
+.vx-hero-card {
+  transition:
+    box-shadow 0.5s ease,
+    border-color 0.5s ease;
+}
+.vx-hero-card:hover {
+  border-color: rgba(139, 92, 246, 0.35);
+  box-shadow:
+    0 28px 70px -12px rgba(0, 0, 0, 0.85),
+    0 0 44px -8px rgba(99, 102, 241, 0.35);
+}
+
+.vx-chart-dot {
+  animation: vx-ping 1.8s cubic-bezier(0, 0, 0.2, 1) infinite;
+  transform-box: fill-box;
+  transform-origin: center;
+}
+
+/* ── Buttons ────────────────────────────────────────────────────────────── */
+.vx-cta-primary {
+  font-family: var(--font-sans);
+  font-weight: 600;
+  letter-spacing: 0.01em;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  border: 0;
+  border-radius: 12px;
+  padding: 13px 22px;
+  font-size: 15px;
+  color: #fff;
+  cursor: pointer;
+  background: linear-gradient(90deg, #4f46e5, #7c3aed);
+  box-shadow: 0 0 25px rgba(99, 102, 241, 0.4);
+  transition:
+    background 0.3s ease,
+    box-shadow 0.3s ease;
+  white-space: nowrap;
+}
+.vx-cta-primary:hover:not(:disabled) {
+  background: linear-gradient(90deg, #6366f1, #8b5cf6);
+  box-shadow: 0 0 36px rgba(99, 102, 241, 0.55);
+}
+.vx-cta-primary:hover:not(:disabled) .vx-cta-arrow {
+  transform: translateX(3px);
+}
+.vx-cta-primary:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+.vx-cta-arrow {
+  transition: transform 0.25s ease;
+}
+
+.vx-cta-secondary {
+  font-family: var(--font-sans);
+  font-weight: 600;
+  letter-spacing: 0.01em;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 12px;
+  padding: 13px 22px;
+  font-size: 15px;
+  color: #fff;
+  cursor: pointer;
+  background: rgba(255, 255, 255, 0.05);
+  backdrop-filter: blur(8px);
+  transition: background-color 0.25s ease;
+  white-space: nowrap;
+}
+.vx-cta-secondary:hover:not(:disabled) {
+  background: rgba(255, 255, 255, 0.1);
+}
+.vx-cta-secondary:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+.vx-launch-btn {
+  position: relative;
+  font-family: var(--font-sans);
+  font-weight: 700;
+  letter-spacing: 0.01em;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  border: 0;
+  border-radius: 14px;
+  padding: 15px 26px;
+  font-size: 15px;
+  color: #fff;
+  cursor: pointer;
+  background: linear-gradient(90deg, #7c3aed, #06b6d4);
+  box-shadow: 0 0 30px rgba(124, 58, 237, 0.4);
+  transition:
+    box-shadow 0.3s ease,
+    transform 0.3s ease;
+}
+.vx-launch-btn:hover:not(:disabled) {
+  box-shadow: 0 0 45px rgba(34, 211, 238, 0.55);
+  transform: translateY(-2px);
+}
+.vx-launch-btn:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+.vx-launch-btn::before {
+  content: "";
+  position: absolute;
+  inset: -2px;
+  border-radius: 16px;
+  padding: 2px;
+  background: conic-gradient(from 0deg, #a78bfa, #22d3ee, #34d399, #a78bfa);
+  -webkit-mask:
+    linear-gradient(#000 0 0) content-box,
+    linear-gradient(#000 0 0);
+  -webkit-mask-composite: xor;
+  mask-composite: exclude;
+  opacity: 0;
+  transition: opacity 0.3s ease;
+  animation: vx-border-spin 4s linear infinite;
+  pointer-events: none;
+}
+.vx-launch-btn:hover::before {
+  opacity: 1;
+}
+@keyframes vx-border-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+.vx-view-demo {
+  color: #94a3b8;
+  text-decoration: none;
+  font-size: 13px;
+  font-weight: 600;
+  transition: color 0.2s ease;
+  text-align: center;
+  background: none;
+  border: 0;
+  cursor: pointer;
+  font-family: var(--font-sans);
+}
+.vx-view-demo:hover {
+  color: #67e8f9;
+}
+
+/* ── Nav ────────────────────────────────────────────────────────────────── */
+.vx-nav-link {
+  color: #94a3b8;
+  text-decoration: none;
+  font-size: 14px;
+  font-weight: 500;
+  padding: 6px 14px;
+  border-radius: 9999px;
+  transition:
+    background-color 0.2s ease,
+    color 0.2s ease;
+  white-space: nowrap;
+}
+.vx-nav-link:hover {
+  color: #fff;
+  background: rgba(255, 255, 255, 0.06);
+}
+.vx-nav-signin {
+  color: #cbd5e1;
+  text-decoration: none;
+  font-size: 14px;
+  font-weight: 500;
+  padding: 6px 12px;
+  transition: color 0.2s ease;
+  white-space: nowrap;
+}
+.vx-nav-signin:hover {
+  color: #fff;
+}
+.vx-nav-toggle {
+  display: none;
+  background: none;
+  border: 0;
+  color: #fff;
+  cursor: pointer;
+  padding: 6px;
+}
+@media (max-width: 860px) {
+  .vx-nav-links,
+  .vx-nav-actions {
+    display: none !important;
+  }
+  .vx-nav-toggle {
+    display: inline-flex;
+  }
+}
+
+/* ── Hero preview card ──────────────────────────────────────────────────── */
+.vx-card-tilt {
+  transform: perspective(1400px) rotateX(6deg) rotateY(-8deg) rotateZ(2deg);
+  transition: transform 0.7s ease-out;
+}
+.vx-card-tilt:hover {
+  transform: perspective(1400px) rotateX(0deg) rotateY(0deg) rotateZ(0deg);
+}
+.vx-float-badge {
+  animation: vx-badge-float 6s ease-in-out infinite;
+}
+@keyframes vx-badge-float {
+  0%,
+  100% {
+    transform: translateY(0);
+  }
+  50% {
+    transform: translateY(-8px);
+  }
+}
+
+/* ── Feature cards ──────────────────────────────────────────────────────── */
+/* No transform here: framer-motion owns the card's y/scale on hover, and a
+   competing CSS transform on the same element would be overwritten mid-gesture. */
+.vx-feature-card {
+  transition:
+    border-color 0.3s ease,
+    box-shadow 0.3s ease;
+}
+.vx-feature-card:hover {
+  border-color: rgba(139, 92, 246, 0.4);
+  box-shadow: 0 15px 35px -10px rgba(139, 92, 246, 0.25);
+}
+.vx-feature-spotlight {
+  position: absolute;
+  inset: 0;
+  opacity: 0;
+  background: linear-gradient(to bottom, rgba(255, 255, 255, 0.04), transparent);
+  transition: opacity 0.5s ease;
+  pointer-events: none;
+}
+.vx-feature-card:hover .vx-feature-spotlight {
+  opacity: 1;
+}
+.vx-feature-icon-wrap {
+  transition:
+    box-shadow 0.3s ease,
+    transform 0.3s ease,
+    border-color 0.3s ease;
+}
+.vx-feature-card:hover .vx-feature-icon-wrap {
+  transform: scale(1.05);
+  border-color: rgba(167, 139, 250, 0.6);
+  box-shadow: 0 0 24px rgba(139, 92, 246, 0.45);
+}
+.vx-feature-title {
+  transition: color 0.3s ease;
+}
+.vx-feature-card:hover .vx-feature-title {
+  color: #ddd6fe;
+}
+.vx-feature-badge {
+  position: absolute;
+  top: -12px;
+  right: 24px;
+  z-index: 10;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  background: rgba(15, 23, 42, 0.9);
+  border: 1px solid rgba(139, 92, 246, 0.4);
+  backdrop-filter: blur(12px);
+  padding: 4px 12px;
+  border-radius: 9999px;
+  font-size: 11px;
+  font-weight: 600;
+  color: #c4b5fd;
+  box-shadow: 0 0 15px rgba(139, 92, 246, 0.3);
+  white-space: nowrap;
+}
+.vx-feature-badge::before {
+  content: "";
+  width: 6px;
+  height: 6px;
+  border-radius: 9999px;
+  background: #a78bfa;
+  animation: vx-badge-pulse 1.8s ease-in-out infinite;
+}
+@keyframes vx-badge-pulse {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.3;
+  }
+}
+
+/* ── Security panel ─────────────────────────────────────────────────────── */
+.vx-security-tilt {
+  transform: perspective(1600px) rotateX(1.5deg);
+  transition: transform 0.5s ease;
+}
+.vx-security-tilt:hover {
+  transform: perspective(1600px) rotateX(0deg);
+}
+.vx-security-glow {
+  position: relative;
+}
+.vx-security-glow::before {
+  content: "";
+  position: absolute;
+  inset: -1px;
+  border-radius: 24px;
+  padding: 1px;
+  background: conic-gradient(
+    from 0deg,
+    rgba(139, 92, 246, 0.6),
+    rgba(34, 211, 238, 0.5),
+    rgba(52, 211, 153, 0.4),
+    rgba(139, 92, 246, 0.6)
+  );
+  -webkit-mask:
+    linear-gradient(#000 0 0) content-box,
+    linear-gradient(#000 0 0);
+  -webkit-mask-composite: xor;
+  mask-composite: exclude;
+  animation: vx-border-spin 8s linear infinite;
+  pointer-events: none;
+  z-index: 0;
+}
+.vx-security-sheen {
+  position: absolute;
+  top: 0;
+  left: -40%;
+  width: 40%;
+  height: 100%;
+  background: linear-gradient(100deg, transparent, rgba(255, 255, 255, 0.05), transparent);
+  animation: vx-sheen 6s ease-in-out infinite;
+  pointer-events: none;
+}
+@keyframes vx-sheen {
+  0% {
+    left: -40%;
+  }
+  50%,
+  100% {
+    left: 120%;
+  }
+}
+.vx-security-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  background: rgba(52, 211, 153, 0.08);
+  border: 1px solid rgba(52, 211, 153, 0.3);
+  border-radius: 9999px;
+  padding: 6px 16px;
+  font-size: 12px;
+  font-weight: 600;
+  color: #6ee7b7;
+  white-space: nowrap;
+}
+.vx-security-cta {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  color: #c4b5fd;
+  text-decoration: none;
+  font-size: 14px;
+  font-weight: 600;
+  padding: 10px 4px;
+  transition:
+    gap 0.2s ease,
+    color 0.2s ease;
+}
+.vx-security-cta:hover {
+  gap: 10px;
+  color: #ddd6fe;
+}
+/* Inline pill, not a stacked card: the four guarantees read as a set of
+   chips beside the copy rather than a second column of panels. */
+.vx-benefit-chip {
+  transition:
+    border-color 0.25s ease,
+    background-color 0.25s ease;
+}
+.vx-benefit-icon {
+  transition: transform 0.3s ease;
+}
+@media (max-width: 900px) {
+  .vx-security-grid {
+    grid-template-columns: 1fr !important;
+  }
+}
+
+/* ── Product window ─────────────────────────────────────────────────────── */
+.vx-preview-headline {
+  background: linear-gradient(90deg, #22d3ee, #60a5fa);
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+  display: inline-block;
+  animation: vx-headline-glow 4s ease-in-out infinite;
+}
+@keyframes vx-headline-glow {
+  0%,
+  100% {
+    text-shadow: 0 0 18px rgba(34, 211, 238, 0.25);
+  }
+  50% {
+    text-shadow: 0 0 32px rgba(34, 211, 238, 0.5);
+  }
+}
+.vx-ticker-wrap {
+  overflow: hidden;
+  position: relative;
+  -webkit-mask-image: linear-gradient(90deg, transparent, #000 8%, #000 92%, transparent);
+  mask-image: linear-gradient(90deg, transparent, #000 8%, #000 92%, transparent);
+}
+.vx-ticker-track {
+  display: flex;
+  gap: 32px;
+  width: max-content;
+  animation: vx-ticker-scroll 26s linear infinite;
+}
+@keyframes vx-ticker-scroll {
+  from {
+    transform: translateX(0);
+  }
+  to {
+    transform: translateX(-50%);
+  }
+}
+.vx-ticker-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-family: var(--font-mono);
+  font-size: 12.5px;
+  color: #94a3b8;
+  white-space: nowrap;
+  padding: 0 16px;
+}
+.vx-bar-track {
+  display: flex;
+  align-items: flex-end;
+  gap: 6px;
+}
+.vx-bar {
+  border-radius: 4px 4px 0 0;
+  transition: opacity 0.2s ease;
+  opacity: 0.85;
+}
+.vx-bar-track:hover .vx-bar {
+  opacity: 1;
+}
+@media (max-width: 960px) {
+  .vx-window-grid {
+    grid-template-columns: 1fr !important;
+  }
+  .vx-window-col-mid {
+    border-left: 0 !important;
+    border-right: 0 !important;
+    border-top: 1px solid rgba(255, 255, 255, 0.06);
+    border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+    padding: 20px 0 !important;
+  }
+}
+
+/* ── Footer ─────────────────────────────────────────────────────────────── */
+.vx-footer-link {
+  position: relative;
+  color: #94a3b8;
+  text-decoration: none;
+  transition: color 0.2s ease;
+}
+.vx-footer-link:hover {
+  color: #fff;
+}
+.vx-footer-link::after {
+  content: "";
+  position: absolute;
+  left: 0;
+  right: 100%;
+  bottom: -4px;
+  height: 1px;
+  background: #67e8f9;
+  transition: right 0.25s ease;
+  box-shadow: 0 0 8px rgba(103, 232, 249, 0.6);
+}
+.vx-footer-link:hover::after {
+  right: 0;
+}
+
+/* ── Scroll-driven card fan ─────────────────────────────────────────────── */
+.vx-fan-wrap {
+  position: relative;
+  height: 340px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  margin: 0 auto 44px;
+  max-width: 900px;
+}
+.vx-fan-card {
+  position: absolute;
+  width: 240px;
+  height: 290px;
+  border-radius: 20px;
+  background: rgba(15, 23, 42, 0.7);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  backdrop-filter: blur(24px);
+  -webkit-backdrop-filter: blur(24px);
+  box-shadow: 0 25px 60px -15px rgba(0, 0, 0, 0.7);
+  padding: 22px;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  cursor: default;
+}
+/* Reduced motion drops the scroll-driven fan for a plain static row, so the
+   cards stop being absolutely positioned on top of one another. */
+.vx-fan-wrap-static {
+  height: auto;
+  flex-wrap: wrap;
+  gap: 20px;
+}
+.vx-fan-wrap-static .vx-fan-card {
+  position: relative;
+}
+@media (max-width: 760px) {
+  .vx-fan-wrap {
+    height: 260px;
+  }
+  .vx-fan-card {
+    width: 190px;
+    height: 230px;
+    padding: 16px;
+  }
+}
+
+/* ── Scroll reveal ──────────────────────────────────────────────────────── */
+.vx-reveal {
+  opacity: 0;
+  transform: translateY(28px);
+  transition:
+    opacity 0.7s cubic-bezier(0.16, 1, 0.3, 1),
+    transform 0.7s cubic-bezier(0.16, 1, 0.3, 1);
+}
+.vx-reveal-in {
+  opacity: 1;
+  transform: translateY(0);
+}
+
+/* ── Hero two-column collapse ───────────────────────────────────────────── */
+@media (max-width: 1100px) {
+  .vx-hero-grid {
+    grid-template-columns: 1fr !important;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .vx-grid-bg,
+  .vx-orb-drift-a,
+  .vx-orb-drift-b,
+  .vx-pulse-dot::before,
+  .vx-float-badge,
+  .vx-chart-dot,
+  .vx-feature-badge::before,
+  .vx-preview-headline,
+  .vx-ticker-track,
+  .vx-launch-btn::before,
+  .vx-security-glow::before {
+    animation: none;
+  }
+  .vx-security-sheen {
+    display: none;
+  }
+  /* These sit in a displaced resting state, so switching the transition off
+     is not enough -- the transform itself has to be neutralised. */
+  .vx-card-tilt,
+  .vx-security-tilt {
+    transform: none;
+    transition: none;
+  }
+  .vx-feature-card,
+  .vx-benefit-card {
+    transition: none;
+  }
+  .vx-feature-card:hover,
+  .vx-benefit-card:hover {
+    transform: none;
+  }
+  .vx-reveal {
+    opacity: 1;
+    transform: none;
+    transition: none;
+  }
+}
