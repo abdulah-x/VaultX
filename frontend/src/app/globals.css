@@ -207,6 +207,13 @@
   --vx-gutter: clamp(20px, 5vw, 64px);
   --vx-section-y: clamp(72px, 9vw, 128px);
 
+  /* UI-chrome face for this route only. Public Sans replaces Inter here --
+     see layout.tsx for why -- by shadowing the --font-sans custom property
+     for this subtree; every descendant using var(--font-sans) or the
+     .font-sans utility inherits the new value without the rest of the app
+     (which keeps Inter) being touched. */
+  --font-sans: var(--font-public-sans), system-ui, sans-serif;
+
   background: var(--vx-bg);
   color: var(--vx-ink);
   font-family: var(--font-sans);
@@ -451,6 +458,10 @@
  *
  *   Fraunces        every heading and the hero's lead paragraph (brand voice)
  *   --font-sans      all UI chrome: buttons, pills, nav, body copy
+ *                    (Public Sans on this route -- see the override above --
+ *                    not the app's Inter; same reasoning as Fraunces over
+ *                    Times, applied to the neutral face instead of the
+ *                    display one)
  *   --font-mono      every number, so digits stay tabular and aligned
  *
  * These rules are unlayered, so they beat the layered .font-heading utility

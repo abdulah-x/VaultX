@@ -1,5 +1,5 @@
 import type { Metadata } from "next";
-import { Inter, JetBrains_Mono, Space_Grotesk, Fraunces } from "next/font/google";
+import { Inter, JetBrains_Mono, Space_Grotesk, Fraunces, Public_Sans } from "next/font/google";
 import "./globals.css";
 import { ThemeProvider } from "@/components/theme-provider";
 import { AuthProvider } from "@/providers/AuthProvider";
@@ -34,6 +34,20 @@ const fraunces = Fraunces({
   subsets: ["latin"],
   weight: ["400", "500", "600", "700"],
   style: ["normal", "italic"],
+  display: "swap",
+});
+
+// Landing-page UI-chrome face -- nav, buttons, badges, body copy -- distinct
+// from the app's Inter. Public Sans was built for the U.S. Web Design System:
+// neutral, built for clarity in dense/data-heavy contexts, which is the
+// closest semantic fit in the sans-serif field for a page arguing the product
+// is a rigorous analytical instrument rather than another balance tracker.
+// Scoped to the landing route only in globals.css (.vx-landing overrides
+// --font-sans locally); the rest of the app keeps Inter untouched.
+const publicSans = Public_Sans({
+  variable: "--font-public-sans",
+  subsets: ["latin"],
+  weight: ["400", "500", "600", "700"],
   display: "swap",
 });
 
@@ -85,7 +99,7 @@ export default function RootLayout({
   return (
     <html lang="en" suppressHydrationWarning>
       <body
-        className={`${inter.variable} ${jetbrainsMono.variable} ${spaceGrotesk.variable} ${fraunces.variable} font-sans antialiased`}
+        className={`${inter.variable} ${jetbrainsMono.variable} ${spaceGrotesk.variable} ${fraunces.variable} ${publicSans.variable} font-sans antialiased`}
       >
         <ThemeProvider attribute="class" defaultTheme="dark" enableSystem disableTransitionOnChange>
           <ReactQueryProvider>
