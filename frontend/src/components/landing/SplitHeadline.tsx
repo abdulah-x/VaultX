@@ -20,10 +20,10 @@ gsap.registerPlugin(useGSAP, SplitText);
  * out of nothing rather than fading in over the background. That reads as
  * type being set rather than as content loading.
  *
- * Times New Roman is a system face, so there is no webfont race here -- the
- * split measures the same metrics the visitor ends up seeing. A headline on a
- * downloaded font would need to wait on document.fonts.ready before splitting,
- * or the line breaks would be computed against the fallback.
+ * The heading is set in Fraunces, a downloaded webfont, so splitting has to
+ * wait on document.fonts.ready first -- splitting against the fallback would
+ * measure the wrong line breaks and word widths, then visibly reflow once
+ * Fraunces swaps in.
  */
 export default function SplitHeadline({
   children,
@@ -35,9 +35,10 @@ export default function SplitHeadline({
   delay?: number;
 }) {
   const ref = useRef<HTMLHeadingElement>(null);
+  const splitRef = useRef<SplitText | null>(null);
 
   useGSAP(
-    () => {
+    (_context, contextSafe) => {
       const el = ref.current;
       if (!el) return;
 
@@ -46,23 +47,40 @@ export default function SplitHeadline({
       // entirely rather than shortening the duration: the effect is motion.
       if (window.matchMedia("(prefers-reduced-motion: reduce)").matches) return;
 
-      const split = new SplitText(el, {
-        type: "words,lines",
-        mask: "lines",
-        autoSplit: true,
+      // Split and animate only run once Fraunces is actually loaded --
+      // splitting against the fallback font's metrics would compute the
+      // wrong line breaks and word widths, then visibly reflow once the
+      // webfont swaps in. document.fonts.ready resolves after every @font-face
+      // referenced on the page has loaded, or immediately if that already
+      // happened before this effect ran.
+      //
+      // The callback runs after useGSAP's own synchronous pass, so it isn't
+      // part of the effect's gsap context automatically -- contextSafe wraps
+      // it so the tween and SplitText it creates are still reverted on
+      // unmount rather than leaking.
+      const run = contextSafe!(() => {
+        const split = new SplitText(el, {
+          type: "words,lines",
+          mask: "lines",
+          autoSplit: true,
+        });
+        splitRef.current = split;
+
+        gsap.from(split.words, {
+          yPercent: 118,
+          opacity: 0,
+          duration: 0.9,
+          ease: "power3.out",
+          stagger: 0.045,
+          delay,
+        });
       });
 
-      gsap.from(split.words, {
-        yPercent: 118,
-        opacity: 0,
-        duration: 0.9,
-        ease: "power3.out",
-        stagger: 0.045,
-        delay,
-      });
+      document.fonts.ready.then(run);
 
       return () => {
-        split.revert();
+        splitRef.current?.revert();
+        splitRef.current = null;
       };
     },
     { scope: ref },
