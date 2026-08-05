@@ -2,6 +2,7 @@
 
 import { motion } from "framer-motion";
 import { Lock, ShieldCheck } from "lucide-react";
+import SplitReveal from "./SplitReveal";
 
 /**
  * The security panel. Each claim below is enforced in code, not aspirational:
@@ -91,12 +92,12 @@ export default function SecurityPanel() {
               </span>
               Security by design
             </span>
-            <h2
+            <SplitReveal
               className="font-heading m-0 text-[clamp(28px,4vw,34px)] font-extrabold tracking-[-0.03em]"
               style={{ color: "#F8FAFC" }}
             >
               We can read. We can&apos;t touch.
-            </h2>
+            </SplitReveal>
             <p className="m-0 text-base leading-[1.65]" style={{ color: "#94A3B8" }}>
               VaultX connects with read-only exchange API keys. Any key carrying withdrawal or trade
               permission is refused at connect time — checked before anything is stored, and what is
