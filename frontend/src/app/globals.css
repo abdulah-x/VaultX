@@ -403,20 +403,6 @@
   }
 }
 
-.vx-badge-glow {
-  display: inline-flex;
-  align-items: center;
-  gap: 8px;
-  background: rgba(255, 255, 255, 0.03);
-  border: 1px solid rgba(139, 92, 246, 0.3);
-  backdrop-filter: blur(8px);
-  border-radius: 9999px;
-  padding: 6px 16px;
-  font-size: 12px;
-  color: #c4b5fd;
-  white-space: nowrap;
-}
-
 /* ── Brand lockup ───────────────────────────────────────────────────────── */
 /* Space Grotesk here is deliberate and is the one exception to the landing's
    Times display face below: the wordmark is a fixed brand asset, not page
@@ -689,19 +675,6 @@
 .vx-card-tilt:hover {
   transform: perspective(1400px) rotateX(0deg) rotateY(0deg) rotateZ(0deg);
 }
-.vx-float-badge {
-  animation: vx-badge-float 6s ease-in-out infinite;
-}
-@keyframes vx-badge-float {
-  0%,
-  100% {
-    transform: translateY(0);
-  }
-  50% {
-    transform: translateY(-8px);
-  }
-}
-
 /* ── Specification sheet (features) ─────────────────────────────────────── */
 /* Two columns of ruled entries. Deliberately not cards: the hero preview, the
    product window and the security panel are all bordered glass panels, so a
@@ -1048,7 +1021,6 @@
   .vx-orb-drift-a,
   .vx-orb-drift-b,
   .vx-pulse-dot::before,
-  .vx-float-badge,
   .vx-chart-dot,
   .vx-feature-badge::before,
   .vx-preview-headline,

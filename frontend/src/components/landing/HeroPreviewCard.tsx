@@ -3,7 +3,7 @@
 import { motion } from "framer-motion";
 import { assetColor } from "@/types/portfolio";
 import AssetMark from "./AssetMark";
-import { DEMO_HOLDINGS, DEMO_TOTALS, DEMO_OPTIMIZER } from "./demoData";
+import { DEMO_HOLDINGS, DEMO_TOTALS } from "./demoData";
 
 /**
  * The tilted product card in the hero -- the centrepiece of the design.
@@ -91,50 +91,20 @@ function AssetRow({ h }: { h: (typeof DEMO_HOLDINGS)[number] }) {
             {h.pnl}
           </span>
         </div>
-        <div className="flex items-center justify-between gap-2">
-          <div className="flex gap-[3px]">
-            {Array.from({ length: 10 }).map((_, i) => (
-              <span
-                key={i}
-                style={{
-                  width: 12,
-                  height: 5,
-                  borderRadius: 2,
-                  background: i < filled ? color : "rgba(148,163,184,0.14)",
-                }}
-              />
-            ))}
-          </div>
-          <span className="font-mono text-[11.5px] tabular-nums" style={{ color: "#64748B" }}>
-            {h.avgCost} avg
-          </span>
+        <div className="flex gap-[3px]">
+          {Array.from({ length: 10 }).map((_, i) => (
+            <span
+              key={i}
+              style={{
+                width: 12,
+                height: 5,
+                borderRadius: 2,
+                background: i < filled ? color : "rgba(148,163,184,0.14)",
+              }}
+            />
+          ))}
         </div>
       </div>
-    </div>
-  );
-}
-
-function FloatingBadge({
-  children,
-  style,
-}: {
-  children: React.ReactNode;
-  style?: React.CSSProperties;
-}) {
-  return (
-    <div
-      className="vx-float-badge absolute z-[3] flex items-center gap-2 whitespace-nowrap rounded-[14px] px-3.5 py-2.5 text-[12.5px] font-semibold"
-      style={{
-        background: "rgba(15,23,42,0.85)",
-        border: "1px solid rgba(255,255,255,0.1)",
-        backdropFilter: "blur(16px)",
-        WebkitBackdropFilter: "blur(16px)",
-        boxShadow: "0 12px 30px -10px rgba(0,0,0,0.6)",
-        color: "#E2E8F0",
-        ...style,
-      }}
-    >
-      {children}
     </div>
   );
 }
@@ -221,7 +191,7 @@ export default function HeroPreviewCard() {
                   Total Capital
                 </div>
                 <div
-                  className="mt-0.5 font-mono text-[26px] font-bold tabular-nums"
+                  className="mt-1 font-mono text-[34px] font-extrabold tracking-tight tabular-nums"
                   style={{ color: "#F8FAFC" }}
                 >
                   {DEMO_TOTALS.capital}
@@ -232,13 +202,10 @@ export default function HeroPreviewCard() {
                   Realized P&amp;L
                 </div>
                 <div
-                  className="mt-0.5 font-mono text-[26px] font-bold tabular-nums"
+                  className="mt-1 font-mono text-[34px] font-extrabold tracking-tight tabular-nums"
                   style={{ color: "#6EE7B7" }}
                 >
-                  {DEMO_TOTALS.realized}{" "}
-                  <span className="text-sm font-normal" style={{ color: "#94A3B8" }}>
-                    / {DEMO_TOTALS.realizedSub}
-                  </span>
+                  {DEMO_TOTALS.realized}
                 </div>
               </div>
             </div>
@@ -261,21 +228,6 @@ export default function HeroPreviewCard() {
           </div>
         </motion.div>
       </motion.div>
-
-      <FloatingBadge style={{ top: -18, right: 8 }}>
-        ⚡ Sharpe {DEMO_OPTIMIZER.currentSharpe} →{" "}
-        <span style={{ color: "#6EE7B7" }}>{DEMO_OPTIMIZER.optimalSharpe}</span>
-      </FloatingBadge>
-      <FloatingBadge
-        style={{
-          bottom: -16,
-          left: -16,
-          border: "1px solid rgba(16,185,129,0.3)",
-          boxShadow: "0 0 0 1px rgba(16,185,129,0.15), 0 12px 30px -10px rgba(0,0,0,0.6)",
-        }}
-      >
-        🛡️ Non-custodial · read-only keys
-      </FloatingBadge>
     </div>
   );
 }

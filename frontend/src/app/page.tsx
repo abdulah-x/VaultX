@@ -169,13 +169,6 @@ export default function LandingPage() {
           <div className="vx-grid-bg" aria-hidden />
           <div className="vx-container grid grid-cols-1 items-center gap-14 lg:grid-cols-12 lg:gap-10">
             <div className="flex flex-col items-start gap-6 lg:col-span-6">
-              <span className="vx-badge-glow">
-                <span className="vx-pulse-dot">
-                  <span className="vx-pulse-dot-core" />
-                </span>
-                Non-custodial · read-only keys
-              </span>
-
               {/* The second line was a three-stop violet/blue/cyan gradient.
                   Every landing page in this category has one, and against the
                   serif it read as decoration applied to type rather than as
@@ -194,11 +187,11 @@ export default function LandingPage() {
               </SplitHeadline>
 
               <p
-                className="vx-hero-serif m-0 max-w-[560px] text-[19px] leading-[1.6]"
+                className="vx-hero-serif m-0 max-w-[580px] text-[21px] leading-[1.7]"
                 style={{ color: "var(--vx-ink-dim)" }}
               >
-                True cost basis from your real trade history, Modern Portfolio Theory allocation
-                targets, and DCA backtesting against real prices — not another balance aggregator.
+                Gain performance insights and true cost basis from your real trade history. An
+                analytical layer, not just a balance tracker.
               </p>
 
               <div className="flex flex-wrap gap-3">
@@ -225,7 +218,7 @@ export default function LandingPage() {
                 style={{ color: "var(--vx-ink-faint)" }}
               >
                 <Lock className="h-3 w-3" />
-                Read-only. VaultX never moves your funds.
+                Non-custodial and read-only. VaultX never moves your funds.
               </span>
 
               {demoError && (
