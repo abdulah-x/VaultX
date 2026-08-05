@@ -256,7 +256,7 @@ export default function CardStack() {
     <section ref={sectionRef} className="relative">
       <div
         ref={pinRef}
-        className="flex h-screen flex-col justify-center overflow-hidden px-6 py-10 md:px-10"
+        className="flex h-screen flex-col items-center overflow-hidden px-6 pt-[130px] pb-10 md:px-10"
       >
         <div className="vx-grid-bg" aria-hidden />
         {heading}
