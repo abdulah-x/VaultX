@@ -441,10 +441,15 @@
  *
  * The page briefly carried three -- Times in the hero, Space Grotesk on every
  * other heading via .font-heading, and Plus Jakarta on the buttons via
- * --font-display -- which read as unresolved rather than deliberate. The
- * system is now two faces plus figures:
+ * --font-display -- which read as unresolved rather than deliberate. Times
+ * itself was later replaced with Fraunces: it reads as a system default
+ * rather than a chosen typeface, which undercuts a page arguing it is more
+ * deliberate than a balance tracker. Fraunces is a variable serif built for
+ * this exact register -- editorial, real character in the curves -- and
+ * ships as a webfont rather than whatever the visitor's OS happens to bundle.
+ * The system is now two faces plus figures:
  *
- *   Times New Roman  every heading and the hero's lead paragraph (brand voice)
+ *   Fraunces        every heading and the hero's lead paragraph (brand voice)
  *   --font-sans      all UI chrome: buttons, pills, nav, body copy
  *   --font-mono      every number, so digits stay tabular and aligned
  *
@@ -453,16 +458,16 @@
  * out-specify either. */
 .vx-landing .font-heading,
 .vx-hero-serif {
-  font-family: "Times New Roman", Times, serif;
+  font-family: var(--font-fraunces), "Iowan Old Style", Georgia, serif;
+  font-optical-sizing: auto;
 }
 
-/* Times is a narrower face than Space Grotesk and is already tightly set, so
-   the -0.03em display tracking tuned for the sans closes it up too far. One
-   rule corrects every heading on the page. */
+/* Fraunces ships with tighter default tracking than Times at display sizes,
+   so the -0.01em/-0.03em closures tuned for the old face now over-close it.
+   One rule corrects every heading on the page. */
 .vx-landing .font-heading,
 .vx-landing h1.vx-hero-serif {
-  letter-spacing: -0.01em;
-  word-spacing: 0.02em;
+  letter-spacing: -0.005em;
 }
 
 /* The tilt itself stays in .vx-card-tilt; this element only carries the
