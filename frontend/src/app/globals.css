@@ -546,7 +546,10 @@
   align-items: center;
   justify-content: center;
   gap: 8px;
-  border: 1px solid rgba(255, 255, 255, 0.1);
+  /* Was rgba(255,255,255,0.1) -- against the #07080e hero background that
+     read as barely-there, so the button's edge disappeared until you were
+     right on top of it. */
+  border: 1px solid rgba(255, 255, 255, 0.2);
   border-radius: 12px;
   padding: 13px 22px;
   font-size: 15px;
@@ -554,11 +557,14 @@
   cursor: pointer;
   background: rgba(255, 255, 255, 0.05);
   backdrop-filter: blur(8px);
-  transition: background-color 0.25s ease;
+  transition:
+    background-color 0.25s ease,
+    border-color 0.25s ease;
   white-space: nowrap;
 }
 .vx-cta-secondary:hover:not(:disabled) {
   background: rgba(255, 255, 255, 0.1);
+  border-color: rgba(255, 255, 255, 0.4);
 }
 .vx-cta-secondary:disabled {
   opacity: 0.6;

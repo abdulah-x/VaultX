@@ -195,7 +195,7 @@ export default function LandingPage() {
                 analytical layer, not just a balance tracker.
               </p>
 
-              <div className="flex flex-wrap gap-3">
+              <div className="mt-4 flex flex-wrap gap-3">
                 <Link href="/signup">
                   <button className="vx-cta-primary">
                     <Wallet className="h-4 w-4" />
@@ -214,9 +214,14 @@ export default function LandingPage() {
                 </button>
               </div>
 
+              {/* Was --vx-ink-faint (#64748b) -- close to failing WCAG AA at
+                  this size against the #07080e hero background. --vx-ink-dim
+                  (#94a3b8, the same value as Tailwind's slate-400) clears it
+                  with margin while staying a clear step under the body copy
+                  above it. */}
               <span
                 className="inline-flex items-center gap-1.5 text-xs"
-                style={{ color: "var(--vx-ink-faint)" }}
+                style={{ color: "var(--vx-ink-dim)" }}
               >
                 <Lock className="h-3 w-3" />
                 Non-custodial and read-only. VaultX never moves your funds.
