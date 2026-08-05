@@ -10,6 +10,7 @@ import { api } from "@/lib/api";
 import LandingNav from "@/components/landing/LandingNav";
 import ScrollRail, { type RailSection } from "@/components/landing/ScrollRail";
 import SplitHeadline from "@/components/landing/SplitHeadline";
+import SplitReveal from "@/components/landing/SplitReveal";
 import HeroPreviewCard from "@/components/landing/HeroPreviewCard";
 import CardStack from "@/components/landing/CardStack";
 import ProductWindow from "@/components/landing/ProductWindow";
@@ -270,9 +271,9 @@ export default function LandingPage() {
             {/* Heading left-aligned against the rule above it rather than
                 centred. Six centred headings in a row was most of why the page
                 read as one undifferentiated column. */}
-            <h2 className="vx-preview-headline font-heading vx-reading m-0 mb-10 pb-1 text-[clamp(30px,4.5vw,44px)] leading-[1.15] font-bold">
+            <SplitReveal className="vx-preview-headline font-heading vx-reading m-0 mb-10 pb-1 text-[clamp(30px,4.5vw,44px)] leading-[1.15] font-bold">
               See what your portfolio is actually doing
-            </h2>
+            </SplitReveal>
             <ProductWindow onLaunchDemo={startDemo} loading={demoLoading} />
           </div>
         </section>
@@ -291,21 +292,26 @@ export default function LandingPage() {
           <div className="vx-container">
             <Rise>
               <Eyebrow num="02">Capability</Eyebrow>
-              <div className="mb-12 grid grid-cols-1 items-end gap-6 lg:grid-cols-12">
-                <h2
-                  className="font-heading m-0 text-[clamp(36px,5vw,52px)] leading-[1.08] font-bold lg:col-span-7"
-                  style={{ color: "var(--vx-ink)" }}
-                >
-                  Depth, not breadth
-                </h2>
+            </Rise>
+            <div className="mb-12 grid grid-cols-1 items-end gap-6 lg:grid-cols-12">
+              {/* Self-timed: fires on its own ScrollTrigger rather than
+                  riding the Rise fade, so the words rise into place instead
+                  of the whole line just appearing. */}
+              <SplitReveal
+                className="font-heading m-0 text-[clamp(36px,5vw,52px)] leading-[1.08] font-bold lg:col-span-7"
+                style={{ color: "var(--vx-ink)" }}
+              >
+                Depth, not breadth
+              </SplitReveal>
+              <Rise delay={150} className="lg:col-span-4 lg:col-start-9">
                 <p
-                  className="m-0 text-[17px] leading-relaxed lg:col-span-4 lg:col-start-9"
+                  className="m-0 text-[17px] leading-relaxed"
                   style={{ color: "var(--vx-ink-dim)" }}
                 >
                   Other trackers count your wallets. VaultX understands them.
                 </p>
-              </div>
-            </Rise>
+              </Rise>
+            </div>
             {/* No Rise wrapper on the grid: each row runs its own staggered
               whileInView entrance, and fading the block in first would delay
               and flatten that stagger. */}
@@ -326,16 +332,14 @@ export default function LandingPage() {
           <div className="vx-container">
             <Eyebrow num="04">Questions</Eyebrow>
             <div className="grid grid-cols-1 gap-10 lg:grid-cols-12">
-              <Rise className="lg:col-span-4">
-                <h2
-                  className="font-heading m-0 text-[clamp(30px,4vw,42px)] leading-[1.1] font-bold"
-                  style={{ color: "var(--vx-ink)" }}
-                >
-                  Questions,
-                  <br />
-                  answered plainly
-                </h2>
-              </Rise>
+              <SplitReveal
+                className="font-heading m-0 text-[clamp(30px,4vw,42px)] leading-[1.1] font-bold lg:col-span-4"
+                style={{ color: "var(--vx-ink)" }}
+              >
+                Questions,
+                <br />
+                answered plainly
+              </SplitReveal>
               {/* The accordion carries the section on its own; a centred
                   heading above it would have been a fifth in a row. */}
               <Rise delay={60} className="lg:col-span-7 lg:col-start-6">
@@ -355,35 +359,37 @@ export default function LandingPage() {
                 "radial-gradient(ellipse 50% 60% at 50% 100%, rgba(99,102,241,0.18), transparent 70%)",
             }}
           />
-          <Rise className="relative z-[1]">
-            <h2
+          <div className="relative z-[1]">
+            <SplitReveal
               className="font-heading mx-auto m-0 max-w-[640px] text-[clamp(30px,4vw,44px)] leading-[1.12] font-bold"
               style={{ color: "var(--vx-ink)" }}
             >
               See it running before you sign up
-            </h2>
-            <p
-              className="mx-auto mt-5 max-w-[520px] text-lg leading-relaxed"
-              style={{ color: "var(--vx-ink-dim)" }}
-            >
-              The demo is a seeded account with real price history — the same analytics you would
-              get on your own portfolio.
-            </p>
-            <div className="mt-9 flex flex-wrap items-center justify-center gap-3">
-              <button
-                type="button"
-                className="vx-cta-primary"
-                onClick={startDemo}
-                disabled={demoLoading}
+            </SplitReveal>
+            <Rise delay={150}>
+              <p
+                className="mx-auto mt-5 max-w-[520px] text-lg leading-relaxed"
+                style={{ color: "var(--vx-ink-dim)" }}
               >
-                {demoLoading ? "Opening demo…" : "Explore the live demo"}
-                <ArrowRight className="vx-cta-arrow h-4 w-4" />
-              </button>
-              <Link href="/signup">
-                <button className="vx-cta-secondary">Create an account</button>
-              </Link>
-            </div>
-          </Rise>
+                The demo is a seeded account with real price history — the same analytics you would
+                get on your own portfolio.
+              </p>
+              <div className="mt-9 flex flex-wrap items-center justify-center gap-3">
+                <button
+                  type="button"
+                  className="vx-cta-primary"
+                  onClick={startDemo}
+                  disabled={demoLoading}
+                >
+                  {demoLoading ? "Opening demo…" : "Explore the live demo"}
+                  <ArrowRight className="vx-cta-arrow h-4 w-4" />
+                </button>
+                <Link href="/signup">
+                  <button className="vx-cta-secondary">Create an account</button>
+                </Link>
+              </div>
+            </Rise>
+          </div>
         </section>
 
         {/* ── Footer ──────────────────────────────────────────────────────── */}
